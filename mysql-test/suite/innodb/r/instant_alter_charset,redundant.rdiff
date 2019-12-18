@@ -1,0 +1,10 @@
+--- instant_alter_charset.result	2019-04-23 17:42:23.324326518 +0400
++++ instant_alter_charset,redundant.result	2019-04-23 17:42:46.047531591 +0400
+@@ -279,7 +279,6 @@
+ alter table boundary_255
+ modify a varchar(70) charset utf8mb4,
+ algorithm=instant;
+-ERROR 0A000: ALGORITHM=INSTANT is not supported. Reason: Cannot change column type. Try ALGORITHM=COPY
+ drop table boundary_255;
+ create table fully_compatible (
+ id int auto_increment unique key,
