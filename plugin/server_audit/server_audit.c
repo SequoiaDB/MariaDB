@@ -1851,36 +1851,44 @@ static void update_connection_info(struct connection_info *cn,
     const struct mysql_event_general *event =
       (const struct mysql_event_general *) ev;
     switch (event->event_subclass) {
-      case MYSQL_AUDIT_GENERAL_LOG:
-      {
-        int init_db_command= event->general_command_length == 7 &&
-          strncmp(event->general_command, "Init DB", 7) == 0;
-        if (!ci_needs_setup(cn))
-        {
-          if (init_db_command)
-          {
-            /* Change DB */
-            if (mysql_57_started)
-              get_str_n(cn->db, &cn->db_length, sizeof(cn->db),
-                  event->database.str, event->database.length);
-            else
-              get_str_n(cn->db, &cn->db_length, sizeof(cn->db),
-                  event->general_query, event->general_query_length);
-          }
-          cn->query_id= mode ? query_counter++ : event->query_id;
-          cn->query= event->general_query;
-          cn->query_length= event->general_query_length;
-          cn->query_time= (time_t) event->general_time;
-          update_general_user(cn, event);
+      case MYSQL_AUDIT_GENERAL_LOG: {
+          int init_db_command =
+              event->general_command_length == 7 &&
+              strncmp(event->general_command, "Init DB", 7) == 0;
+          if (!ci_needs_setup(cn)) {
+            if (init_db_command) {
+              /* Change DB */
+              if (mysql_57_started)
+                get_str_n(cn->db, &cn->db_length, sizeof(cn->db),
+                          event->database.str, event->database.length);
+              else {
+                get_str_n(cn->db, &cn->db_length, sizeof(cn->db),
+                          event->general_query, event->general_query_length);
+              }
+            } else {
+              if (cn->db &&
+                  (*(char *)(cn->db) == '\0' ||
+                   (event->database.length &&
+                    strncmp((const char *)(cn->db), event->database.str,
+                            event->database.length)))) {
+                memset(cn->db, 0, cn->db_length);
+                get_str_n(cn->db, &cn->db_length, sizeof(cn->db),
+                          event->database.str, event->database.length);
+              }
+            }
+            cn->query_id = mode ? query_counter++ : event->query_id;
+            cn->query = event->general_query;
+            cn->query_length = event->general_query_length;
+            cn->query_time = (time_t)event->general_time;
+            update_general_user(cn, event);
+          } else if (init_db_command)
+            setup_connection_initdb(cn, event);
+          else if (event_query_command(event))
+            setup_connection_query(cn, event);
+          else
+            setup_connection_simple(cn);
+          break;
         }
-        else if (init_db_command)
-          setup_connection_initdb(cn, event);
-        else if (event_query_command(event))
-          setup_connection_query(cn, event);
-        else
-          setup_connection_simple(cn);
-        break;
-      }
 
       case MYSQL_AUDIT_GENERAL_STATUS:
         if (event_query_command(event))
