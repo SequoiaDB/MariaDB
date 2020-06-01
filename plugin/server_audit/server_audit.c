@@ -320,6 +320,7 @@ struct connection_info
   char query_buffer[1024];
   time_t query_time;
   int log_always;
+  int in_procedure;
 };
 
 #define DEFAULT_FILENAME_LEN 16
@@ -831,6 +832,14 @@ struct sa_keyword not_ddl_keywords[]=
   {0, NULL, 0, SQLCOM_DDL}
 };
 
+struct sa_keyword sdb_ddl_keywords[]=
+{
+  {4, "DROP", &function_word, SQLCOM_QUERY_ADMIN},
+  {4, "DROP", &procedure_word, SQLCOM_QUERY_ADMIN},
+  {6, "CREATE", &function_word, SQLCOM_QUERY_ADMIN},
+  {6, "CREATE", &procedure_word, SQLCOM_QUERY_ADMIN},
+  {0, NULL, 0, SQLCOM_DDL}
+};
 
 struct sa_keyword ddl_keywords[]=
 {
@@ -919,7 +928,7 @@ static struct user_coll incl_user_coll, excl_user_coll;
 static unsigned long long query_counter= 1;
 
 
-static struct connection_info *get_loc_info(MYSQL_THD thd)
+struct connection_info *get_loc_info(MYSQL_THD thd)
 {
   return (struct connection_info *) THDVAR(thd, loc_info);
 }
@@ -1518,7 +1527,6 @@ static int get_next_word(const char *query, char *word)
   return len;
 }
 
-
 static int filter_query_type(const char *query, struct sa_keyword *kwd)
 {
   int qwe_in_list;
@@ -1526,7 +1534,8 @@ static int filter_query_type(const char *query, struct sa_keyword *kwd)
   int len, nlen= 0;
   const struct sa_keyword *l_keywords;
 
-  while (*query && (is_space(*query) || *query == '(' || *query == '/'))
+  while (*query && (is_space(*query) || *query == '(' || *query == '/' ||
+         *query == '-' || *query == '#'))
   {
     /* comment handling */
     if (*query == '/' && query[1] == '*')
@@ -1542,6 +1551,46 @@ static int filter_query_type(const char *query, struct sa_keyword *kwd)
       while (*query)
       {
         if (*query=='*' && query[1] == '/')
+        {
+          query+= 2;
+          break;
+        }
+        query++;
+      }
+      continue;
+    }
+    /* comment with --space*/
+    if (*query == '-' && query[1] == '-' && is_space(query[2]))
+    {
+      query += 3;
+      while (*query)
+      {
+        if (*query == '\n')
+        {
+          query+=1;
+          break;
+        }
+        if ((*query == '\r' && query[1] == '\n'))
+        {
+          query+=2;
+          break;
+        }
+        query ++;
+      }
+      continue;
+    }
+    /* comment with #*/
+    if (*query == '#')
+    {
+      query += 1;
+      while (*query)
+      {
+        if (*query == '\n')
+        {
+          query+=1;
+          break;
+        }
+        if ((*query == '\r' && query[1] == '\n'))
         {
           query+= 2;
           break;
@@ -1647,8 +1696,9 @@ static int log_statement_ex(const struct connection_info *cn,
 
     if (events & EVENT_QUERY_DDL)
     {
-      if (!filter_query_type(query, not_ddl_keywords) &&
-          filter_query_type(query, ddl_keywords))
+      if ((!filter_query_type(query, not_ddl_keywords) &&
+          filter_query_type(query, ddl_keywords)) ||
+          filter_query_type(query, sdb_ddl_keywords))
         goto do_log_query;
     }
     if (events & EVENT_QUERY_DML)
@@ -1855,8 +1905,12 @@ static void update_connection_info(struct connection_info *cn,
           int init_db_command =
               event->general_command_length == 7 &&
               strncmp(event->general_command, "Init DB", 7) == 0;
-          if (!ci_needs_setup(cn)) {
-            if (init_db_command) {
+          if (!ci_needs_setup(cn))
+          {
+            if (init_db_command || (cn->db && (*(char*)(cn->db) == '\0' ||
+                (event->database.str && strncmp((const char*)(cn->db),
+                 event->database.str, event->database.length)))))
+            {
               /* Change DB */
               if (mysql_57_started)
                 get_str_n(cn->db, &cn->db_length, sizeof(cn->db),
@@ -1864,16 +1918,6 @@ static void update_connection_info(struct connection_info *cn,
               else {
                 get_str_n(cn->db, &cn->db_length, sizeof(cn->db),
                           event->general_query, event->general_query_length);
-              }
-            } else {
-              if (cn->db &&
-                  (*(char *)(cn->db) == '\0' ||
-                   (event->database.length &&
-                    strncmp((const char *)(cn->db), event->database.str,
-                            event->database.length)))) {
-                memset(cn->db, 0, cn->db_length);
-                get_str_n(cn->db, &cn->db_length, sizeof(cn->db),
-                          event->database.str, event->database.length);
               }
             }
             cn->query_id = mode ? query_counter++ : event->query_id;
@@ -1889,7 +1933,6 @@ static void update_connection_info(struct connection_info *cn,
             setup_connection_simple(cn);
           break;
         }
-
       case MYSQL_AUDIT_GENERAL_STATUS:
         if (event_query_command(event))
         {
@@ -2238,8 +2281,13 @@ int get_db_mysql57(MYSQL_THD thd, char **name, int *len)
     db_off= 608;
     db_len_off= 616;
 #else
+#ifdef __aarch64__
+    db_off= 632;
+    db_len_off= 640;
+#else
     db_off= 0;
     db_len_off= 0;
+#endif /*aarch64*/
 #endif /*x86_64*/
   }
   else
@@ -2248,8 +2296,13 @@ int get_db_mysql57(MYSQL_THD thd, char **name, int *len)
     db_off= 536;
     db_len_off= 544;
 #else
+#ifdef __aarch64__
+    db_off= 552;
+    db_len_off= 560;
+#else
     db_off= 0;
     db_len_off= 0;
+#endif /*aarch64*/
 #endif /*x86_64*/
   }
 
