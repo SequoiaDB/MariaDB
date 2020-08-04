@@ -1,0 +1,4 @@
+This is the archive project for original MariaDB source code.
+All supported versions are maintained as seperated branches.
+Please do not push to master branch.
+If any new supported version is added, please push to a new seperated branch and ask the maintainer to add it to the protected list. 
