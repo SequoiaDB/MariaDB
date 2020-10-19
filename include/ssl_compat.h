@@ -25,10 +25,10 @@
 #define ERR_remove_state(X) ERR_clear_error()
 #define EVP_CIPHER_CTX_SIZE 176
 #define EVP_MD_CTX_SIZE 48
-#undef EVP_MD_CTX_init
-#define EVP_MD_CTX_init(X) do { memset((X), 0, EVP_MD_CTX_SIZE); EVP_MD_CTX_reset(X); } while(0)
-#undef EVP_CIPHER_CTX_init
-#define EVP_CIPHER_CTX_init(X) do { memset((X), 0, EVP_CIPHER_CTX_SIZE); EVP_CIPHER_CTX_reset(X); } while(0)
+//#undef EVP_MD_CTX_init
+//#define EVP_MD_CTX_init(X) do { memset((X), 0, EVP_MD_CTX_SIZE); EVP_MD_CTX_reset(X); } while(0)
+//#undef EVP_CIPHER_CTX_init
+//#define EVP_CIPHER_CTX_init(X) do { memset((X), 0, EVP_CIPHER_CTX_SIZE); EVP_CIPHER_CTX_reset(X); } while(0)
 
 /*
   Macros below are deprecated. OpenSSL 1.1 may define them or not,
@@ -36,10 +36,10 @@
 */
 #undef ERR_free_strings
 #define ERR_free_strings()
-#undef EVP_cleanup
-#define EVP_cleanup()
-#undef CRYPTO_cleanup_all_ex_data
-#define CRYPTO_cleanup_all_ex_data()
+//#undef EVP_cleanup
+//#define EVP_cleanup()
+//#undef CRYPTO_cleanup_all_ex_data
+//#define CRYPTO_cleanup_all_ex_data()
 #undef SSL_load_error_strings
 #define SSL_load_error_strings()
 
