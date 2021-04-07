@@ -6415,3 +6415,12 @@ static Sys_var_ulonglong Sys_max_rowid_filter_size(
        SESSION_VAR(max_rowid_filter_size), CMD_LINE(REQUIRED_ARG),
        VALID_RANGE(1024, (ulonglong)~(intptr)0), DEFAULT(128*1024),
        BLOCK_SIZE(1));
+
+const bool sdb_sql_pushdown = false;
+
+static Sys_var_mybool Sys_sequoiadb_push_down_join(
+      "sequoiadb_sql_push_down",
+      "Whether push down join query or not.",
+      SESSION_VAR(sdb_sql_pushdown), CMD_LINE(OPT_ARG),
+      DEFAULT(FALSE));
+

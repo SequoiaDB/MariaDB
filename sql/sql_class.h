@@ -802,6 +802,7 @@ typedef struct system_variables
 
   vers_asof_timestamp_t vers_asof_timestamp;
   ulong vers_alter_history;
+  my_bool sdb_sql_pushdown;
 } SV;
 
 /**
@@ -4616,8 +4617,13 @@ public:
 
     PSI_CALL_set_thread_info(query(), query_length());
   }
-  void reset_query()               /* Mutex protected */
-  { set_query(CSET_STRING()); }
+  void reset_query() {               /* Mutex protected */
+    set_query(CSET_STRING());
+    DBUG_ASSERT(this == current_thd);
+    mysql_mutex_lock(&LOCK_thd_data);
+    sdb_sql_push_down_query_string = LEX_CSTRING();
+    mysql_mutex_unlock(&LOCK_thd_data);
+  }
   void set_query_and_id(char *query_arg, uint32 query_length_arg,
                         CHARSET_INFO *cs, query_id_t new_query_id);
   void set_query_id(query_id_t new_query_id)
@@ -5145,6 +5151,17 @@ public:
   bool sql_parser(LEX *old_lex, LEX *lex,
                   char *str, uint str_len, bool stmt_prepare_mode);
 
+public:
+  /* String hold to push down to sequoiadb coord to exec. */
+  LEX_CSTRING sdb_sql_push_down_query_string;
+  enum sdb_sql_push_down_exec_steps {
+    NON_PUSH_DOWN = 0,
+    PREPARE_STEP = 1,
+    EXEC_STEP = 2,
+  };
+  /* Flag of the real push down join exec finised. All the other result need to
+     be ignored but the real result of join exec. */
+  sdb_sql_push_down_exec_steps sdb_sql_exec_step;
 };
 
 /** A short cut for thd->get_stmt_da()->set_ok_status(). */

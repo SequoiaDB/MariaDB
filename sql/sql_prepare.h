@@ -354,4 +354,12 @@ private:
   size_t m_column_count; /* TODO: change to point to metadata */
 };
 
+enum push_type {
+  NO_PUSH = 0,
+  PUSH_TO_SDB = 1,//push down to sequoiadb
+  PUSH_TO_SPK = 2,//push down to spark
+};
+
+push_type sql_pushdown(THD *thd, char **push_down_sql);
+
 #endif // SQL_PREPARE_H

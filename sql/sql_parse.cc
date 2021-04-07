@@ -106,6 +106,8 @@
 
 #define PRIV_LOCK_TABLES (SELECT_ACL | LOCK_TABLES_ACL)
 
+extern const bool sdb_sql_pushdown;
+
 #define FLAGSTR(V,F) ((V)&(F)?#F" ":"")
 
 #ifdef WITH_ARIA_STORAGE_ENGINE
@@ -1833,6 +1835,80 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     MYSQL_SET_STATEMENT_TEXT(thd->m_statement_psi, thd->query(),
                              thd->query_length());
 
+    thd->sdb_sql_exec_step = thd->NON_PUSH_DOWN;
+    char *push_down_sql = NULL;
+    char *concat_join_push_down_sql = NULL;
+    bool add_multi_query_flag = false;
+    push_type type = NO_PUSH;
+
+    if(thd->variables.sdb_sql_pushdown) {
+      const int LEN_OF_CONCAT_STR = 700;
+      int len_of_concat = thd->query_length() + LEN_OF_CONCAT_STR + 1;
+
+      type = sql_pushdown(thd, &push_down_sql);
+      if (NO_PUSH == type) {
+        goto original_step;
+      }
+
+      concat_join_push_down_sql = (char*)thd->alloc(len_of_concat);
+      if (NULL == concat_join_push_down_sql)
+      {
+        type = NO_PUSH;
+        goto original_step;
+      }
+
+      concat_join_push_down_sql[0] = '\0';
+      if (PUSH_TO_SPK == type) {
+        snprintf(concat_join_push_down_sql, len_of_concat,
+          "set @`sdb#pd#exec#in#only#mysql` = @@sequoiadb_execute_only_in_mysql;"
+          "set @`spk#pd#exec#in#only#mysql` = @@spark_execute_only_in_mysql;"
+          "drop table if exists `I#T#TEMP#PHJ`;"
+          "set session `spark_execute_only_in_mysql` = on;"
+          "set session `sequoiadb_execute_only_in_mysql` = on;"
+          "create temporary table if not exists `I#T#TEMP#PHJ` engine = spark "
+          "as %s;%s",push_down_sql,
+          "set session `spark_execute_only_in_mysql` = off;"
+          "set session `sequoiadb_execute_only_in_mysql` = off;"
+          "select * from `I#T#TEMP#PHJ`;"
+          "drop table if exists `I#T#TEMP#PHJ`;"
+          "set @@sequoiadb_execute_only_in_mysql = @`sdb#pd#exec#in#only#mysql`;"
+          "set @@spark_execute_only_in_mysql = @`spk#pd#exec#in#only#mysql`;");
+      }
+
+      if (PUSH_TO_SDB == type) {
+        snprintf(concat_join_push_down_sql, len_of_concat,
+          "set @`sdb#pd#exec#in#only#mysql` = @@sequoiadb_execute_only_in_mysql;"
+          "set @`spk#pd#exec#in#only#mysql` = @@spark_execute_only_in_mysql;"
+          "drop table if exists `I#T#TEMP#PHJ`;"
+          "set session `sequoiadb_execute_only_in_mysql` = on;"
+          "create temporary table if not exists `I#T#TEMP#PHJ` engine = sequoiadb "
+          "as %s;%s",push_down_sql,
+          "set session `sequoiadb_execute_only_in_mysql` = off;"
+          "select * from `I#T#TEMP#PHJ`;"
+          "drop table if exists `I#T#TEMP#PHJ`;"
+          "set @@sequoiadb_execute_only_in_mysql = @`sdb#pd#exec#in#only#mysql`;"
+          "set @@spark_execute_only_in_mysql = @`spk#pd#exec#in#only#mysql`;");
+      }
+
+      CSET_STRING concat_lex_str(concat_join_push_down_sql,
+                                 strlen(concat_join_push_down_sql),
+                                 &my_charset_utf8mb4_bin);
+      LEX_CSTRING join_query_lex_str =
+         {push_down_sql, strlen(push_down_sql)};
+
+      mysql_mutex_lock(&thd->LOCK_thd_data);
+      thd->sdb_sql_push_down_query_string = join_query_lex_str;
+      mysql_mutex_unlock(&thd->LOCK_thd_data);
+      thd->set_query(concat_lex_str);
+      packet_end= thd->query() + thd->query_length();
+      thd->sdb_sql_exec_step = thd->PREPARE_STEP;
+      if (!(thd->client_capabilities & CLIENT_MULTI_STATEMENTS)) {
+        thd->client_capabilities|= CLIENT_MULTI_STATEMENTS;
+        add_multi_query_flag = true;
+      }
+    }
+
+original_step:
     Parser_state parser_state;
     if (unlikely(parser_state.init(thd, thd->query(), thd->query_length())))
       break;
@@ -1869,7 +1945,21 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
 
       /* Finalize server status flags after executing a statement. */
       thd->update_server_status();
-      thd->protocol->end_statement();
+      if (thd->variables.sdb_sql_pushdown) {
+        /* If push down hash join sql to sdb, then only send the result of 
+           join sql exec.*/
+        if(thd->PREPARE_STEP == thd->sdb_sql_exec_step) {
+        } else if(thd->EXEC_STEP == thd->sdb_sql_exec_step) {
+          thd->protocol->end_statement();
+          if (add_multi_query_flag) {
+            thd->client_capabilities&= ~CLIENT_MULTI_STATEMENTS;
+          }
+          /*Only send the execute result to client*/
+          thd->sdb_sql_exec_step = thd->NON_PUSH_DOWN;
+        }
+      } else {
+        thd->protocol->end_statement();
+      }
       query_cache_end_of_result(thd);
 
       mysql_audit_general(thd, MYSQL_AUDIT_GENERAL_STATUS,

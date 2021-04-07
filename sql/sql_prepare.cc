@@ -130,6 +130,87 @@ static const uint PARAMETER_FLAG_UNSIGNED= 128U << 8;
 #include "wsrep_trans_observer.h"
 #endif /* WITH_WSREP */
 
+extern const bool sdb_sql_pushdown;
+
+push_type sql_pushdown(THD *thd, char **push_down_sql) {
+  char *upperred_origin = NULL;
+  int offset_to_keyword = -1;
+  push_type type = NO_PUSH;
+
+  if(thd->variables.sdb_sql_pushdown) {
+    const char* SPK_STR = "SPARK";
+    const char* SDB = "SDB";
+    int pushdown_key_len = 0;
+    int pushdown_len = 0;
+    uint original_sql_len = thd->query_length();
+    const char *original_sql = thd->query();
+
+    upperred_origin = (char*)thd->alloc(original_sql_len + 1);
+    if (NULL == upperred_origin)
+    {
+      type = NO_PUSH;
+      goto error;
+    }
+
+    upperred_origin[0] = '\0';
+    snprintf(upperred_origin, original_sql_len + 1, "%s", thd->query());
+    for (uint i = 0; i < original_sql_len + 1; i++) {
+      upperred_origin[i] = toupper(upperred_origin[i]);
+    }
+
+    String pushdown_key_word("/*+SQL_PUSHDOWN=", &my_charset_utf8mb4_bin);
+    String upperred_string(upperred_origin, &my_charset_utf8mb4_bin);
+    
+    offset_to_keyword = upperred_string.strstr(pushdown_key_word);
+    /*-1 or offset, -1 not found*/
+    if (-1 == offset_to_keyword) {
+      type = NO_PUSH;
+      goto error;
+    }
+    
+    pushdown_key_len += pushdown_key_word.length();
+    /*push down to Spark*/
+    if(0 == strncmp(&upperred_origin[offset_to_keyword + pushdown_key_len],
+                    SPK_STR, strlen(SPK_STR))) {
+      pushdown_key_len+=strlen(SPK_STR);
+      type = PUSH_TO_SPK;
+    /*pushdown to SDB*/
+    } else if(0 == strncmp(&upperred_origin[offset_to_keyword + pushdown_key_len],
+                           SDB, strlen(SDB))) {
+      pushdown_key_len+=strlen(SDB);
+      type = PUSH_TO_SDB;
+    }
+
+    pushdown_key_len += strlen("*/");
+
+    if (!push_down_sql) {
+      goto done;
+    }
+
+    *push_down_sql = (char*)thd->alloc(original_sql_len + 1);
+    if (NULL == *push_down_sql)
+    {
+      type = NO_PUSH;
+      goto error;
+    }
+
+    (*push_down_sql)[0] = '\0';
+
+    //*Remove /*+SQL_PUSHDOWN=SDB*/ from original sql.
+    //*/*+SQL_PUSHDOWN=SDB*/select count, select /*+SQL_PUSHDOWN=SDB*/ count
+    pushdown_len = snprintf(*push_down_sql, offset_to_keyword + 1, "%s",
+                           original_sql);
+    pushdown_len += snprintf(&(*push_down_sql)[offset_to_keyword],
+              original_sql_len - offset_to_keyword, "%s",
+              &original_sql[offset_to_keyword + pushdown_key_len]);
+
+  }
+done:
+  return type;
+error:
+  goto done;
+}
+
 /**
   A result class used to send cursor rows using the binary protocol.
 */
@@ -4223,6 +4304,13 @@ bool Prepared_statement::prepare(const char *packet, uint packet_len)
 
   lex_start(thd);
   lex->context_analysis_only|= CONTEXT_ANALYSIS_ONLY_PREPARE;
+
+  /*Not support prepare statement for sql pushdown to sdb or spark.*/
+  push_type type = NO_PUSH;
+  type = sql_pushdown(thd, NULL);
+  if (NO_PUSH != type) {
+    my_error(ER_UNSUPPORTED_PS, MYF(0));
+  }
 
   error= (parse_sql(thd, & parser_state, NULL) ||
           thd->is_error() ||
