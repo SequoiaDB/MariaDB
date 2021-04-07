@@ -213,7 +213,11 @@ enum ha_extra_function {
   /** Start writing rows during ALTER TABLE...ALGORITHM=COPY. */
   HA_EXTRA_BEGIN_ALTER_COPY,
   /** Finish writing rows during ALTER TABLE...ALGORITHM=COPY. */
-  HA_EXTRA_END_ALTER_COPY
+  HA_EXTRA_END_ALTER_COPY,
+  /** Mark writing row of NEXTVAL for sequence */
+  HA_EXTRA_NEXT_VALUE,
+  /** Mark writing row of SETVAL for sequence */
+  HA_EXTRA_SET_VALUE
 };
 
 /* Compatible option, to be deleted in 6.0 */

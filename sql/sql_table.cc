@@ -4286,6 +4286,9 @@ mysql_prepare_create_table(THD *thd, HA_CREATE_INFO *create_info,
   /* Check fields. */
   Item::Check_table_name_prm walk_prm(db, table_name);
   it.rewind();
+  extern char *ha_inst_group_name;
+  const char *USE_STRICT_CREATE_MODE_VAR="SDB_USER_DEFINE_VAR_USE_STRICT_CREATE_MODE";
+  const char *USE_STRICT_CREATE_MODE_FLAG="SEQUOIADB_FLAG_USE_STRICT_CREATE_MODE";
   while ((sql_field=it++))
   {
     Field::utype type= (Field::utype) MTYP_TYPENR(sql_field->unireg_check);
@@ -4304,6 +4307,25 @@ mysql_prepare_create_table(THD *thd, HA_CREATE_INFO *create_info,
     {
       sql_field->flags|= NO_DEFAULT_VALUE_FLAG;
       sql_field->pack_flag|= FIELDFLAG_NO_DEFAULT;
+    }
+
+    user_var_entry *entry= (user_var_entry*) my_hash_search(&thd->user_vars,
+                                                            (uchar*) USE_STRICT_CREATE_MODE_VAR,
+                                                            strlen(USE_STRICT_CREATE_MODE_VAR));
+    if (ha_inst_group_name && 0 != strlen(ha_inst_group_name) &&
+        entry && entry->value && 0 == strcmp(entry->value, USE_STRICT_CREATE_MODE_FLAG) &&
+        !sql_field->has_default_function() &&
+        !sql_field->default_value &&  // maybe default NULL or not set
+        !(sql_field->flags & (NOT_NULL_FLAG | (1 << 31))) &&
+        !(sql_field->flags & AUTO_INCREMENT_FLAG))
+    {
+      if ((!sql_field->is_timestamp_type() ||
+           opt_explicit_defaults_for_timestamp)&&
+          !sql_field->vers_sys_field())
+      {
+        sql_field->flags|= NO_DEFAULT_VALUE_FLAG;
+        sql_field->pack_flag|= FIELDFLAG_NO_DEFAULT;
+      }
     }
 
     if (thd->variables.sql_mode & MODE_NO_ZERO_DATE &&

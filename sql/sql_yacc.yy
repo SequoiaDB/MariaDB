@@ -7281,8 +7281,8 @@ attribute_list:
         ;
 
 attribute:
-          NULL_SYM { Lex->last_field->flags&= ~ NOT_NULL_FLAG; }
-        | DEFAULT column_default_expr { Lex->last_field->default_value= $2; }
+          NULL_SYM { Lex->last_field->flags&= ~ NOT_NULL_FLAG; Lex->last_field->flags|= (1<< 31); }
+        | DEFAULT column_default_expr { Lex->last_field->default_value= $2; Lex->last_field->flags|= (1<< 31); }
         | ON UPDATE_SYM NOW_SYM opt_default_time_precision
           {
             Item *item= new (thd->mem_root) Item_func_now_local(thd, $4);

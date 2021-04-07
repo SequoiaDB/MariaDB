@@ -67,6 +67,7 @@
 #include "wsrep_trans_observer.h"
 #endif /* WITH_WSREP */
 
+#include "sql_audit.h"
 
 bool
 No_such_table_error_handler::handle_condition(THD *,
@@ -4380,6 +4381,16 @@ restart:
   while (*table_to_open  ||
          (thd->locked_tables_mode <= LTM_LOCK_TABLES && *sroutine_to_open))
   {
+    // check version after open tables, before lock tables
+    // for statement including routines
+    extern char *ha_inst_group_name;
+    if (thd->lex->sroutines_list.first != NULL &&
+        SQLCOM_CALL != thd->lex->sql_command &&
+        !thd->in_sub_stmt &&
+        ha_inst_group_name && 0 != strlen(ha_inst_group_name))
+    {
+      mysql_audit_general(thd, 0, 0, "PreCheckSQLObjects");
+    }
     /*
       For every table in the list of tables to open, try to find or open
       a table.

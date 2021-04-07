@@ -143,6 +143,7 @@ static TYPELIB opt_system_types=
   opt_system_type_values, NULL
 };
 static ulonglong opt_system= 0ULL;
+static my_bool opt_exec_only_in_mysql = 0;
 static my_bool insert_pat_inited= 0, debug_info_flag= 0, debug_check_flag= 0,
                select_field_names_inited= 0;
 static ulong opt_max_allowed_packet, opt_net_buffer_length;
@@ -593,6 +594,9 @@ static struct my_option my_long_options[] =
    "Default authentication client-side plugin to use.",
    &opt_default_auth, &opt_default_auth, 0,
    GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"exec-only-in-mysql", 0, "Enable sequoiadb_execute_only_in_mysql.",
+   &opt_exec_only_in_mysql, &opt_exec_only_in_mysql, 0,
+   GET_BOOL, NO_ARG, 0, 0, 0, 0, 0, 0},
   {0, 0, 0, 0, 0, 0, GET_NO_ARG, NO_ARG, 0, 0, 0, 0, 0, 0}
 };
 
@@ -797,6 +801,13 @@ static void write_header(FILE *sql_file, const char *db_name)
             "/*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;\n",
             path?"":"NO_AUTO_VALUE_ON_ZERO",compatible_mode_normal_str[0]==0?"":",",
             compatible_mode_normal_str);
+    // FIX BUG SEQUOIASQLMAINSTREAM-801
+    if (opt_exec_only_in_mysql)
+    {
+      fprintf(sql_file,
+              "SET @SDB_USER_DEFINE_VAR_USE_STRICT_CREATE_MODE="
+              "'SEQUOIADB_FLAG_USE_STRICT_CREATE_MODE';");
+    }
     check_io(sql_file);
   }
 } /* write_header */
@@ -3840,6 +3851,42 @@ static char *alloc_query_str(size_t size)
   return query;
 }
 
+static void dump_table(char *table, char *db);
+static my_bool dump_table_or_sequence(char *table, char *db, const char *type)
+{
+  const char *table_type = NULL;
+  char get_table_type_query[NAME_LEN + 100]={0};
+  my_bool match = FALSE;
+  MYSQL_RES *query_result = NULL;
+  MYSQL_ROW row;
+  DBUG_ENTER("dump_table");
+
+  // get table type
+  my_snprintf(get_table_type_query, NAME_LEN + 100,
+              "SELECT table_type FROM INFORMATION_SCHEMA.TABLES "
+              "WHERE table_schema = '%s' AND table_name='%s'", db, table);
+  if (mysql_query(mysql, get_table_type_query))
+    DBUG_RETURN(match);
+
+  if (!(query_result= mysql_store_result(mysql)))
+    DBUG_RETURN(match);
+
+  if (!(row= mysql_fetch_row(query_result)))
+    DBUG_RETURN(match);
+
+  table_type = (char*) row[0];
+
+  if (strcmp(table_type, "VIEW") == 0)
+    DBUG_RETURN(match);
+
+  if (strcmp(table_type, type) == 0)
+  {
+    match = TRUE;
+    dump_table(table, db);
+  }
+  DBUG_RETURN(match);
+}
+
 
 /*
 
@@ -5812,13 +5859,15 @@ static int dump_selected_tables(char *db, char **table_names, int tables)
         get_sequence_structure(*pos, db);
     }
   }
-  /* Dump each selected table */
+  /* Dump each selected sequence */
   for (pos= dump_tables; pos < end; pos++)
   {
     if (check_if_ignore_table(*pos, table_type) & IGNORE_SEQUENCE_TABLE)
       continue;
     DBUG_PRINT("info",("Dumping table %s", *pos));
-    dump_table(*pos, db, NULL, 0);
+    if (!dump_table_or_sequence(*pos, db, "SEQUENCE"))
+       continue;
+
     if (opt_dump_triggers &&
         mysql_get_server_version(mysql) >= 50009)
     {
@@ -5842,6 +5891,37 @@ static int dump_selected_tables(char *db, char **table_names, int tables)
       DDL safe in general case. It just improves situation for people for whom
       it might be working.
     */
+    if (opt_single_transaction && mysql_get_server_version(mysql) >= 50500)
+    {
+      verbose_msg("-- Rolling back to savepoint sp...\n");
+      if (mysql_query_with_error_report(mysql, 0, "ROLLBACK TO SAVEPOINT sp"))
+      {
+        if (!ignore_errors)
+          free_root(&glob_root, MYF(0));
+        maybe_exit(EX_MYSQLERR);
+      }
+    }
+  }
+
+  /* Dump each selected tables */
+  for (pos= dump_tables; pos < end; pos++)
+  {
+    DBUG_PRINT("info",("Dumping table %s", *pos));
+    if (!dump_table_or_sequence(*pos, db, "BASE TABLE"))
+       continue;
+
+    if (opt_dump_triggers &&
+        mysql_get_server_version(mysql) >= 50009)
+    {
+      if (dump_triggers_for_table(*pos, db))
+      {
+        if (path)
+          my_fclose(md_result_file, MYF(MY_WME));
+        if (!ignore_errors)
+          free_root(&glob_root, MYF(0));
+        maybe_exit(EX_MYSQLERR);
+      }
+    }
     if (opt_single_transaction && mysql_get_server_version(mysql) >= 50500)
     {
       verbose_msg("-- Rolling back to savepoint sp...\n");
@@ -6559,6 +6639,8 @@ static my_bool get_view_structure(char *table, char* db)
   char       table_buff2[NAME_LEN*2+3];
   char       query[QUERY_LENGTH];
   FILE       *sql_file= md_result_file;
+  char       table_name_buff[NAME_LEN*2+3] = {0};
+  char       db_name_buff[NAME_LEN*2+3] = {0};
   DBUG_ENTER("get_view_structure");
 
   if (opt_no_create_info) /* Don't write table creation info */
@@ -6613,11 +6695,15 @@ static my_bool get_view_structure(char *table, char* db)
   /* View might not exist if this view was dumped with --tab. */
   fprintf(sql_file, "/*!50001 DROP VIEW IF EXISTS %s*/;\n", opt_quoted_table);
 
+  mysql_real_escape_string(mysql, table_name_buff, table, (ulong)strlen(table));
+  mysql_real_escape_string(mysql, db_name_buff, db, (ulong)strlen(db));
+
   my_snprintf(query, sizeof(query),
               "SELECT CHECK_OPTION, DEFINER, SECURITY_TYPE, "
               "       CHARACTER_SET_CLIENT, COLLATION_CONNECTION "
               "FROM information_schema.views "
-              "WHERE table_name=\"%s\" AND table_schema=\"%s\"", table, db);
+              "WHERE table_name=\"%s\" AND table_schema=\"%s\"",
+              table_name_buff, db_name_buff);
 
   if (mysql_query(mysql, query))
   {
@@ -6898,6 +6984,12 @@ int main(int argc, char **argv)
     goto err;
   if (opt_single_transaction && do_unlock_tables(mysql)) /* unlock but no commit! */
     goto err;
+
+  if (opt_exec_only_in_mysql) {
+    const char *query = "SET SESSION sequoiadb_execute_only_in_mysql = 1";
+    if (mysql_query_with_error_report(mysql, 0, query))
+      goto err;
+  }
 
   if (opt_alltspcs)
     dump_all_tablespaces();

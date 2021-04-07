@@ -1459,7 +1459,49 @@ sp_head::execute(THD *thd, bool merge_da_on_success)
 
     /* Reset sp_rcontext::end_partial_result_set flag. */
     ctx->end_partial_result_set= FALSE;
-
+    
+    // retry current SQL statement
+    extern char *ha_inst_group_name;
+    if (err_status && thd->get_stmt_da()->is_error() && !thd->in_sub_stmt &&
+        ha_inst_group_name && 0 != strlen(ha_inst_group_name))
+    {
+      uint mysql_errno = thd->get_stmt_da()->sql_errno();
+      // notify HA set retry flag
+      mysql_audit_general(thd, 0, 0, "SetDMLRetryFlag");
+      if (mysql_errno && !thd->get_stmt_da()->is_set()) 
+      {
+        // 1. prepare-reexecution
+        if (thd->locked_tables_mode <= LTM_LOCK_TABLES)
+        {
+          user_var_events_alloc_saved= thd->user_var_events_alloc;
+          thd->user_var_events_alloc= thd->mem_root;
+        }
+        sql_digest_state *parent_digest= thd->m_digest;
+        thd->m_digest= NULL;
+        
+        // 2. reexecute
+        err_status = i->execute(thd, &ip);
+        
+        // 3. post-execution
+        thd->m_digest = parent_digest;
+        if (i->free_list)
+          cleanup_items(i->free_list);
+        if (thd->locked_tables_mode <= LTM_LOCK_TABLES)
+        {
+          reset_dynamic(&thd->user_var_events);
+          thd->user_var_events_alloc= user_var_events_alloc_saved;
+        }
+        thd->cleanup_after_query();
+        free_root(&execute_mem_root, MYF(0));
+        if (likely(!thd->is_fatal_error) && likely(!thd->killed_errno()) &&
+          ctx->handle_sql_condition(thd, &ip, i))
+        {
+          err_status= FALSE;
+        }
+        ctx->end_partial_result_set= FALSE;
+      }
+      mysql_audit_general(thd, 0, 0, "ResetDMLRetryFlag");
+    }
   } while (!err_status && likely(!thd->killed) &&
            likely(!thd->is_fatal_error) &&
            !thd->spcont->pause_state);
@@ -3372,6 +3414,7 @@ sp_lex_keeper::reset_lex_and_exec_core(THD *thd, uint *nextp,
     We should not save old value since it is saved/restored in
     sp_head::execute() when we are entering/leaving routine.
   */
+  LEX *lex_saved = thd->lex;
   thd->lex= m_lex;
 
   thd->set_query_id(next_query_id());
@@ -3416,6 +3459,22 @@ sp_lex_keeper::reset_lex_and_exec_core(THD *thd, uint *nextp,
 
   Json_writer_object trace_command(thd);
   Json_writer_array trace_command_steps(thd, "steps");
+
+  extern char *ha_inst_group_name;
+  Sroutine_hash_entry *sroutine_to_open = thd->lex->sroutines_list.first;
+  enum enum_sql_command sql_cmd = thd->lex->sql_command;
+  // for statement "set m:= 'select ...'" in procedure, mysql_execute_command
+  // will not be called, version check must be here
+  if (sroutine_to_open != NULL && !thd->in_sub_stmt &&
+     (SQLCOM_END == sql_cmd || SQLCOM_SET_OPTION == sql_cmd) &&
+      ha_inst_group_name && 0 != strlen(ha_inst_group_name))
+  {
+    enum enum_sql_command saved_cmd = thd->lex->sql_command;
+    thd->lex->sql_command = SQLCOM_SET_OPTION;
+    mysql_audit_general(thd, 0, 0, "PreCheckSQLObjects");
+    thd->lex->sql_command = saved_cmd;
+  }
+
   if (open_tables)
     res= instr->exec_open_and_lock_tables(thd, m_lex->query_tables);
 
@@ -3424,7 +3483,19 @@ sp_lex_keeper::reset_lex_and_exec_core(THD *thd, uint *nextp,
     res= instr->exec_core(thd, nextp);
     DBUG_PRINT("info",("exec_core returned: %d", res));
   }
-
+  
+  // notify HA store lex for current statement
+  extern char *ha_inst_group_name;
+  if (res && thd->is_error() &&
+     // not in any function
+     !thd->in_sub_stmt &&
+     // current statement does not include routines
+     (NULL == thd->lex->sroutines_list.first) &&
+      ha_inst_group_name && 0 != strlen(ha_inst_group_name))
+  {
+    mysql_audit_general(thd, 0, 0, "SaveInstrLex");
+  }
+  
   /*
     Call after unit->cleanup() to close open table
     key read.
@@ -3502,6 +3573,8 @@ sp_lex_keeper::reset_lex_and_exec_core(THD *thd, uint *nextp,
     cleanup_items() is called in sp_head::execute()
   */
   thd->lex->restore_set_statement_var();
+  /* Restore original lex. */
+  thd->lex= lex_saved;
   DBUG_RETURN(res || thd->is_error());
 }
 

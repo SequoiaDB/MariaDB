@@ -130,6 +130,7 @@ public:
 
   bool all_values_used;
   seq_init initialized;
+  longlong res_value;
 
 private:
   mysql_rwlock_t mutex;

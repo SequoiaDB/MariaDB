@@ -1525,6 +1525,61 @@ uint maria_multi_check(THD *thd, char *packet, size_t packet_length)
 }
 
 
+void reset_execution_ctx(THD *thd, char *beginning_of_next_stmt, 
+                         ulong length, enum enum_server_command command) 
+{
+  thd->get_stmt_da()->set_skip_flush();
+#ifdef WITH_ARIA_STORAGE_ENGINE
+  ha_maria::implicit_commit(thd, FALSE);
+#endif
+
+  /* Finalize server status flags after executing a statement. */
+  thd->update_server_status();
+  query_cache_end_of_result(thd);
+
+  log_slow_statement(thd);
+  DBUG_ASSERT(!thd->apc_target.is_enabled());
+
+  /* PSI end */
+  MYSQL_END_STATEMENT(thd->m_statement_psi, thd->get_stmt_da());
+  thd->m_statement_psi= NULL;
+  thd->m_digest= NULL;
+
+  /* DTRACE end */
+  if (MYSQL_QUERY_DONE_ENABLED())
+  {
+    MYSQL_QUERY_DONE(thd->is_error());
+  }
+
+#if defined(ENABLED_PROFILING)
+  thd->profiling.finish_current_query();
+  thd->profiling.start_new_query("continuing");
+  thd->profiling.set_query_source(beginning_of_next_stmt, length);
+#endif
+
+          /* DTRACE begin */
+  MYSQL_QUERY_START(beginning_of_next_stmt, thd->thread_id,
+                    thd->get_db(),
+                    &thd->security_ctx->priv_user[0],
+                    (char *) thd->security_ctx->host_or_ip);
+
+  /* PSI begin */
+  thd->m_digest= & thd->m_digest_state;
+  thd->m_statement_psi= MYSQL_START_STATEMENT(&thd->m_statement_state,
+                                              com_statement_info[command].m_key,
+                                              thd->db.str, thd->db.length,
+                                              thd->charset());
+  THD_STAGE_INFO(thd, stage_init);
+  MYSQL_SET_STATEMENT_TEXT(thd->m_statement_psi, beginning_of_next_stmt,
+                           length);
+  thd->set_query_and_id(beginning_of_next_stmt, length,
+                        thd->charset(), next_query_id());
+  statistic_increment(thd->status_var.questions, &LOCK_status);
+
+  if (!WSREP(thd))
+    thd->set_time();
+}
+
 /**
   Perform one connection-level (COM_XXXX) command.
 
@@ -1932,7 +1987,37 @@ original_step:
 #endif /* WITH_WSREP */
       mysql_parse(thd, thd->query(), thd->query_length(), &parser_state,
                   is_com_multi, is_next_command);
-
+    
+    // sequoiadb-sql DML retry 
+    {
+      extern char *ha_inst_group_name;
+      if (thd->get_stmt_da()->is_error() && ha_inst_group_name && 
+        0 != strlen(ha_inst_group_name) &&
+        // does not include any routines
+        0 == thd->lex->sroutines_list.elements) {
+        uint mysql_errno = thd->get_stmt_da()->sql_errno();
+        // notify HA set retry flag
+        mysql_audit_general(thd, 0, 0, "SetDMLRetryFlag");
+        if (mysql_errno && !thd->get_stmt_da()->is_set())
+        {
+          char *beginning_of_next_stmt = (char*)thd->query();
+          ulong length= (ulong)(thd->query_length());
+          reset_execution_ctx(thd, beginning_of_next_stmt, length, command);
+          parser_state.reset(beginning_of_next_stmt, length);
+          
+          mysql_parse(thd, beginning_of_next_stmt, length, &parser_state,
+                      is_com_multi, is_next_command);
+        }
+        // reset retry flag
+        mysql_audit_general(thd, 0, 0, "ResetDMLRetryFlag");
+      }
+      // clear checked objects cache
+      if (ha_inst_group_name && 0 != strlen(ha_inst_group_name))
+      {
+        mysql_audit_general(thd, 0, 0, "ResetCheckedObjects");
+      }
+    }
+                  
     while (!thd->killed && (parser_state.m_lip.found_semicolon != NULL) &&
            ! thd->is_error())
     {
@@ -2047,7 +2132,35 @@ original_step:
 #endif /* WITH_WSREP */
       mysql_parse(thd, beginning_of_next_stmt, length, &parser_state,
                   is_com_multi, is_next_command);
-
+      
+      // sequoiadb-sql DML retry 
+      {
+        extern char *ha_inst_group_name;
+        if (thd->get_stmt_da()->is_error() && ha_inst_group_name && 
+          0 != strlen(ha_inst_group_name) &&
+          // does not include any routines
+          0 == thd->lex->sroutines_list.elements)
+        {
+          uint mysql_errno = thd->get_stmt_da()->sql_errno();
+          // notify HA set retry flag
+          mysql_audit_general(thd, 0, 0, "SetDMLRetryFlag");
+          if (mysql_errno && !thd->get_stmt_da()->is_set()) 
+          {
+            reset_execution_ctx(thd, beginning_of_next_stmt, length, command);
+            parser_state.reset(beginning_of_next_stmt, length);
+            
+            mysql_parse(thd, beginning_of_next_stmt, length, &parser_state,
+                        is_com_multi, is_next_command);
+          }
+          // reset retry flag
+          mysql_audit_general(thd, 0, 0, "ResetDMLRetryFlag");
+        }
+        // clear checked objects cache
+        if (ha_inst_group_name && 0 != strlen(ha_inst_group_name)) 
+        {
+          mysql_audit_general(thd, 0, 0, "ResetCheckedObjects");
+        }
+      }
     }
 
     DBUG_PRINT("info",("query ready"));
@@ -3236,7 +3349,9 @@ static int mysql_create_routine(THD *thd, LEX *lex)
       which doesn't any check routine privileges,
       so no routine privilege record  will insert into mysql.procs_priv.
     */
-    if (thd->slave_thread && is_acl_user(definer->host.str, definer->user.str))
+    extern char *ha_inst_group_name;
+    bool ha_is_on = (ha_inst_group_name && 0 != strlen(ha_inst_group_name));
+    if ((thd->slave_thread || ha_is_on) && is_acl_user(definer->host.str, definer->user.str))
     {
       security_context.change_security_context(thd,
                                                &thd->lex->definer->user,
@@ -3263,7 +3378,7 @@ static int mysql_create_routine(THD *thd, LEX *lex)
     */
     if (restore_backup_context)
     {
-      DBUG_ASSERT(thd->slave_thread == 1);
+      DBUG_ASSERT(thd->slave_thread == 1 || ha_is_on);
       thd->security_ctx->restore_security_context(thd, backup);
     }
 
@@ -3886,6 +4001,16 @@ mysql_execute_command(THD *thd)
   if (lex->sql_command != SQLCOM_SET_OPTION)
     DEBUG_SYNC(thd,"before_execute_sql_command");
 #endif
+  
+  static const int MYSQL_AUDIT_QUERY_BEGIN = 4;
+  static const int MYSQL_AUDIT_QUERY_END = 5;
+  mysql_audit_general(thd, MYSQL_AUDIT_QUERY_BEGIN,
+                      thd->get_stmt_da()->is_error() ?
+                      thd->get_stmt_da()->sql_errno() : 0,
+                      command_name[COM_QUERY].str);
+  if (thd->check_killed()) {
+  	goto error;
+  }
 
   /*
     Check if we are in a read-only transaction and we're trying to
@@ -6310,6 +6435,11 @@ finish:
   thd->reset_query_timer();
   DBUG_ASSERT(!thd->in_active_multi_stmt_transaction() ||
                thd->in_multi_stmt_transaction_mode());
+  
+  mysql_audit_general(thd, MYSQL_AUDIT_QUERY_END,
+                      thd->get_stmt_da()->is_error() ?
+                      thd->get_stmt_da()->sql_errno() : 0,
+                      command_name[COM_QUERY].str);
 
   lex->unit.cleanup();
 

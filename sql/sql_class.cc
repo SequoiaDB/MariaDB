@@ -3057,6 +3057,20 @@ bool select_send::send_result_set_metadata(List<Item> &list, uint flags)
     return FALSE;
   }
 #endif /* WITH_WSREP */
+  
+  // do not send send_result_metadata once again for DML
+  extern char *ha_inst_group_name;
+  if (ha_inst_group_name && 0 != strlen(ha_inst_group_name)) 
+  {
+    extern pthread_key_t ha_sql_stmt_info_key;
+    bool *is_ha_result_set_started = (bool*)pthread_getspecific(ha_sql_stmt_info_key);
+    if (is_ha_result_set_started && (*is_ha_result_set_started)) 
+    {
+      // *is_ha_result_set_started = false;
+      return false;
+    }
+  }
+  
   if (!(res= thd->protocol->send_result_set_metadata(&list, flags)))
     is_result_set_started= 1;
   return res;
