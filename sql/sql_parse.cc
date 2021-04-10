@@ -1890,11 +1890,13 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     MYSQL_SET_STATEMENT_TEXT(thd->m_statement_psi, thd->query(),
                              thd->query_length());
 
-    thd->sdb_sql_exec_step = thd->NON_PUSH_DOWN;
+    thd->sdb_sql_exec_step = THD::NON_PUSH_DOWN;
     char *push_down_sql = NULL;
     char *concat_join_push_down_sql = NULL;
     bool add_multi_query_flag = false;
     push_type type = NO_PUSH;
+    uint original_sql_len = thd->query_length();
+    char *original_sql = thd->query();
 
     if(thd->variables.sdb_sql_pushdown) {
       const int LEN_OF_CONCAT_STR = 700;
@@ -1956,7 +1958,7 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
       mysql_mutex_unlock(&thd->LOCK_thd_data);
       thd->set_query(concat_lex_str);
       packet_end= thd->query() + thd->query_length();
-      thd->sdb_sql_exec_step = thd->PREPARE_STEP;
+      thd->sdb_sql_exec_step = THD::PREPARE_STEP;
       if (!(thd->client_capabilities & CLIENT_MULTI_STATEMENTS)) {
         thd->client_capabilities|= CLIENT_MULTI_STATEMENTS;
         add_multi_query_flag = true;
@@ -1965,9 +1967,14 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
 
 original_step:
     Parser_state parser_state;
+    uint err_no = 0;
+    char err_text[MYSQL_ERRMSG_SIZE] = {0};
+    char m_ret_sqlstate[SQLSTATE_LENGTH+1] = {0};
+    char *restore_sql = NULL;
+    static const int len_of_restore_sql = 150;
+    Diagnostics_area *da= thd->get_stmt_da();
     if (unlikely(parser_state.init(thd, thd->query(), thd->query_length())))
       break;
-
 #ifdef WITH_WSREP
     if (WSREP(thd))
     {
@@ -2033,25 +2040,29 @@ original_step:
       if (thd->variables.sdb_sql_pushdown) {
         /* If push down hash join sql to sdb, then only send the result of 
            join sql exec.*/
-        if(thd->PREPARE_STEP == thd->sdb_sql_exec_step) {
-        } else if(thd->EXEC_STEP == thd->sdb_sql_exec_step) {
+        if(THD::PREPARE_STEP == thd->sdb_sql_exec_step) {
+        } else if(THD::EXEC_STEP == thd->sdb_sql_exec_step) {
           thd->protocol->end_statement();
           if (add_multi_query_flag) {
             thd->client_capabilities&= ~CLIENT_MULTI_STATEMENTS;
           }
           /*Only send the execute result to client*/
-          thd->sdb_sql_exec_step = thd->NON_PUSH_DOWN;
+          thd->sdb_sql_exec_step = THD::DONE;
         }
       } else {
         thd->protocol->end_statement();
       }
       query_cache_end_of_result(thd);
-
-      mysql_audit_general(thd, MYSQL_AUDIT_GENERAL_STATUS,
-                          thd->get_stmt_da()->is_error()
-                            ? thd->get_stmt_da()->sql_errno()
-                            : 0,
-                          command_name[command].str);
+      /* SQL push down only audit sql at last time.*/
+      if (!thd->variables.sdb_sql_pushdown ||
+         THD::NON_PUSH_DOWN == thd->sdb_sql_exec_step ||
+         THD::DONE == thd->sdb_sql_exec_step) {
+        mysql_audit_general(thd, MYSQL_AUDIT_GENERAL_STATUS,
+                            thd->get_stmt_da()->is_error()
+                              ? thd->get_stmt_da()->sql_errno()
+                              : 0,
+                            command_name[command].str);
+      }
 
       ulong length= (ulong)(packet_end - beginning_of_next_stmt);
 
@@ -2161,7 +2172,47 @@ original_step:
           mysql_audit_general(thd, 0, 0, "ResetCheckedObjects");
         }
       }
+      if (!thd->killed && thd->is_error() &&
+          (THD::PREPARE_STEP == thd->sdb_sql_exec_step ||
+           THD::EXEC_STEP == thd->sdb_sql_exec_step)) {
+        err_text[0] = '\0';
+        err_no = da->sql_errno();
+        snprintf(err_text, MYSQL_ERRMSG_SIZE, "%s", da->message());
+        snprintf(m_ret_sqlstate, SQLSTATE_LENGTH+1, "%s", da->get_sqlstate());
+        da->reset_diagnostics_area();
+        restore_sql = (char*)thd->alloc(len_of_restore_sql);
+        if (NULL == restore_sql) {
+          my_error(ER_OUT_OF_RESOURCES, MYF(0));
+          break;
+        }
+        snprintf(restore_sql, len_of_restore_sql,
+          "set @@sequoiadb_execute_only_in_mysql = @`sdb#pd#exec#in#only#mysql`;"
+          "set @@spark_execute_only_in_mysql = @`spk#pd#exec#in#only#mysql`;");
+        CSET_STRING sql_res_lex_str(restore_sql, strlen(restore_sql),
+                                    &my_charset_utf8mb4_bin);
+        thd->set_query(sql_res_lex_str);
+        packet_end= thd->query() + thd->query_length();
+        parser_state.reset(thd->query(), thd->query_length());
+        thd->sdb_sql_exec_step = THD::ERROR_OCCUR;
+        parser_state.m_lip.found_semicolon = thd->query();
+        continue;
+      }
     }
+
+    if (THD::ERROR_OCCUR == thd->sdb_sql_exec_step) {
+      da->reset_diagnostics_area();
+      da->set_error_status(err_no, err_text, m_ret_sqlstate, NULL);
+      thd->sdb_sql_exec_step = THD::DONE;
+    }
+
+    if (thd->variables.sdb_sql_pushdown && THD::DONE == thd->sdb_sql_exec_step) {
+      CSET_STRING ogl_sql(original_sql, original_sql_len, &my_charset_utf8mb4_bin);
+      thd->set_query(ogl_sql);
+    }
+
+    /* silence a warning about unused varaibles. */
+    (void)original_sql_len;
+    (void)original_sql;
 
     DBUG_PRINT("info",("query ready"));
     break;
