@@ -131,6 +131,11 @@ static const uint PARAMETER_FLAG_UNSIGNED= 128U << 8;
 #endif /* WITH_WSREP */
 
 extern const bool sdb_sql_pushdown;
+static inline bool check_if_only_have_space(const CHARSET_INFO *cs, char *str, 
+                                           char *end)
+{
+  return str+ cs->cset->scan(cs, str, end, MY_SEQ_SPACES) == end;
+}
 
 push_type sql_pushdown(THD *thd, char **push_down_sql) {
   char *upperred_origin = NULL;
@@ -138,12 +143,20 @@ push_type sql_pushdown(THD *thd, char **push_down_sql) {
   push_type type = NO_PUSH;
 
   if(thd->variables.sdb_sql_pushdown) {
-    const char* SPK_STR = "SPARK";
-    const char* SDB = "SDB";
-    int pushdown_key_len = 0;
+    const static String SPK_STR("SPARK", &my_charset_utf8mb4_bin);
+    const static String SDB("SDB", &my_charset_utf8mb4_bin);
+    static uint spk_len = SPK_STR.length();
+    static uint sdb_len = SDB.length();
     int pushdown_len = 0;
     uint original_sql_len = thd->query_length();
     const char *original_sql = thd->query();
+    const char *begin = NULL;
+    const char *end = NULL;
+    uint offset = 0;
+
+    if (!push_down_sql) {
+      goto done;
+    }
 
     upperred_origin = (char*)thd->alloc(original_sql_len + 1);
     if (NULL == upperred_origin)
@@ -158,52 +171,98 @@ push_type sql_pushdown(THD *thd, char **push_down_sql) {
       upperred_origin[i] = toupper(upperred_origin[i]);
     }
 
-    String pushdown_key_word("/*+SQL_PUSHDOWN=", &my_charset_utf8mb4_bin);
     String upperred_string(upperred_origin, &my_charset_utf8mb4_bin);
-    
-    offset_to_keyword = upperred_string.strstr(pushdown_key_word);
-    /*-1 or offset, -1 not found*/
-    if (-1 == offset_to_keyword) {
-      type = NO_PUSH;
-      goto error;
+
+    while (offset < original_sql_len) {
+      int offset_to_key_word = -1;
+      static String com_begin_word("/*+", &my_charset_utf8mb4_bin);
+
+      offset_to_key_word = upperred_string.strstr(com_begin_word, offset);
+      /*-1 or offset, -1 not found*/
+      if (-1 == offset_to_key_word) {
+        type = NO_PUSH;
+        goto done;
+      }
+
+      begin = &original_sql[offset_to_key_word];
+      offset += offset_to_key_word + com_begin_word.length();
+      offset_to_key_word = -1;
+
+      static String pushdown_key_word("SQL_PUSHDOWN=", &my_charset_utf8mb4_bin);
+      offset_to_keyword = upperred_string.strstr(pushdown_key_word, offset);
+      /*-1 or offset, -1 not found*/
+      if (-1 == offset_to_keyword) {
+        type = NO_PUSH;
+        goto done;
+      }
+
+      if(!check_if_only_have_space(&my_charset_utf8mb4_bin,
+                               &upperred_origin[offset],
+                               &upperred_origin[offset_to_keyword])) {
+        type = NO_PUSH;
+        // if current is not satisfied, such as /*+ a sql_pushdown*/, 
+        // then search next /*+ sql_pushdown */
+        offset = offset_to_keyword + pushdown_key_word.length();
+        continue;
+      }
+
+      offset = offset_to_keyword + pushdown_key_word.length();
+      /*push down to Spark*/
+      if(original_sql_len > offset + spk_len &&
+         (!my_charset_utf8mb4_bin.coll->strnncoll(&my_charset_utf8mb4_bin,
+                                       (const uchar *)&upperred_origin[offset],
+                                       spk_len,
+                                       (const uchar *)SPK_STR.ptr(),
+                                       spk_len, 0))) {
+        offset += spk_len;
+        type = PUSH_TO_SPK;
+      /*pushdown to SDB*/
+      } else if(original_sql_len > offset + sdb_len &&
+                (!my_charset_utf8mb4_bin.coll->strnncoll(&my_charset_utf8mb4_bin,
+                                       (const uchar *)&upperred_origin[offset],
+                                       sdb_len,
+                                       (const uchar *)SDB.ptr(),
+                                       sdb_len, 0))) {
+        offset += sdb_len;
+        type = PUSH_TO_SDB;
+      }
+
+      static String com_end_word("*/", &my_charset_utf8mb4_bin);
+      offset_to_keyword = -1;
+      offset_to_keyword = upperred_string.strstr(com_end_word, offset);
+      if (-1 == offset_to_keyword) {
+        type = NO_PUSH;
+        goto done;
+      }
+
+      if(!check_if_only_have_space(&my_charset_utf8mb4_bin,
+                               &upperred_origin[offset],
+                               &upperred_origin[offset_to_keyword])) {
+        type = NO_PUSH;
+        // search next satisfied key word /*+ sql_pushdown */
+        offset = offset_to_keyword + com_end_word.length();
+        continue;
+      }
+
+      offset = offset_to_keyword + com_end_word.length();
+      end = &original_sql[offset];;
+      *push_down_sql = (char*)thd->alloc(original_sql_len + 1);
+      if (NULL == *push_down_sql)
+      {
+        type = NO_PUSH;
+        goto error;
+      }
+
+      (*push_down_sql)[0] = '\0';
+
+      //*Remove /*+SQL_PUSHDOWN=SDB*/ from original sql.
+      //*/*+SQL_PUSHDOWN=SDB*/select count, select /*+SQL_PUSHDOWN=SDB*/ count
+      pushdown_len = snprintf(*push_down_sql, begin - original_sql + 1, "%s",
+                              original_sql);
+      pushdown_len += snprintf(&(*push_down_sql)[begin - original_sql],
+                        original_sql_len + 1 - (end - original_sql), "%s", end);
+      offset = original_sql_len;
     }
-    
-    pushdown_key_len += pushdown_key_word.length();
-    /*push down to Spark*/
-    if(0 == strncmp(&upperred_origin[offset_to_keyword + pushdown_key_len],
-                    SPK_STR, strlen(SPK_STR))) {
-      pushdown_key_len+=strlen(SPK_STR);
-      type = PUSH_TO_SPK;
-    /*pushdown to SDB*/
-    } else if(0 == strncmp(&upperred_origin[offset_to_keyword + pushdown_key_len],
-                           SDB, strlen(SDB))) {
-      pushdown_key_len+=strlen(SDB);
-      type = PUSH_TO_SDB;
-    }
-
-    pushdown_key_len += strlen("*/");
-
-    if (!push_down_sql) {
-      goto done;
-    }
-
-    *push_down_sql = (char*)thd->alloc(original_sql_len + 1);
-    if (NULL == *push_down_sql)
-    {
-      type = NO_PUSH;
-      goto error;
-    }
-
-    (*push_down_sql)[0] = '\0';
-
-    //*Remove /*+SQL_PUSHDOWN=SDB*/ from original sql.
-    //*/*+SQL_PUSHDOWN=SDB*/select count, select /*+SQL_PUSHDOWN=SDB*/ count
-    pushdown_len = snprintf(*push_down_sql, offset_to_keyword + 1, "%s",
-                           original_sql);
-    pushdown_len += snprintf(&(*push_down_sql)[offset_to_keyword],
-              original_sql_len - offset_to_keyword, "%s",
-              &original_sql[offset_to_keyword + pushdown_key_len]);
-
   }
 done:
   return type;
