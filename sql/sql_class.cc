@@ -684,6 +684,8 @@ THD::THD(my_thread_id id, bool is_wsrep_applier)
    wsrep_applier_service(NULL),
    wsrep_wfc()
 #endif /*WITH_WSREP */
+   ,
+   is_result_set_started(FALSE)
 {
   ulong tmp;
   bzero(&variables, sizeof(variables));
@@ -3059,20 +3061,13 @@ bool select_send::send_result_set_metadata(List<Item> &list, uint flags)
 #endif /* WITH_WSREP */
   
   // do not send send_result_metadata once again for DML
-  extern char *ha_inst_group_name;
-  if (ha_inst_group_name && 0 != strlen(ha_inst_group_name)) 
-  {
-    extern pthread_key_t ha_sql_stmt_info_key;
-    bool *is_ha_result_set_started = (bool*)pthread_getspecific(ha_sql_stmt_info_key);
-    if (is_ha_result_set_started && (*is_ha_result_set_started)) 
-    {
-      // *is_ha_result_set_started = false;
-      return false;
-    }
-  }
+  if (thd->is_result_set_started)
+    return FALSE;
   
   if (!(res= thd->protocol->send_result_set_metadata(&list, flags)))
     is_result_set_started= 1;
+
+  thd->is_result_set_started= is_result_set_started;
   return res;
 }
 

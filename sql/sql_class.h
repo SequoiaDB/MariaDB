@@ -5165,6 +5165,7 @@ public:
   /* Flag of the real push down join exec finised. All the other result need to
      be ignored but the real result of join exec. */
   sdb_sql_push_down_exec_steps sdb_sql_exec_step;
+  bool is_result_set_started;
 };
 
 /** A short cut for thd->get_stmt_da()->set_ok_status(). */

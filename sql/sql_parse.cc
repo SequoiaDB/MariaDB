@@ -2023,6 +2023,7 @@ original_step:
       {
         mysql_audit_general(thd, 0, 0, "ResetCheckedObjects");
       }
+      thd->is_result_set_started= FALSE;
     }
                   
     while (!thd->killed && (parser_state.m_lip.found_semicolon != NULL) &&
@@ -2171,6 +2172,7 @@ original_step:
         {
           mysql_audit_general(thd, 0, 0, "ResetCheckedObjects");
         }
+        thd->is_result_set_started= FALSE;
       }
       if (!thd->killed && thd->is_error() &&
           (THD::PREPARE_STEP == thd->sdb_sql_exec_step ||
