@@ -1706,6 +1706,10 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     goto dispatch_end;
   }
 
+  if (thd->is_result_set_started)
+  {
+    thd->is_result_set_started= false;
+  }
   switch (command) {
   case COM_INIT_DB:
   {
