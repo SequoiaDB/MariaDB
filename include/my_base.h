@@ -217,7 +217,9 @@ enum ha_extra_function {
   /** Mark writing row of NEXTVAL for sequence */
   HA_EXTRA_NEXT_VALUE,
   /** Mark writing row of SETVAL for sequence */
-  HA_EXTRA_SET_VALUE
+  HA_EXTRA_SET_VALUE,
+  /** Mark delete or rename partition table */
+  HA_EXTRA_DEL_REN_PART_TABLE
 };
 
 /* Compatible option, to be deleted in 6.0 */

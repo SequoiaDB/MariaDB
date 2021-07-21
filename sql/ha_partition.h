@@ -281,7 +281,7 @@ extern "C" int cmp_key_rowid_part_id(void *ptr, uchar *ref1, uchar *ref2);
 
 class ha_partition :public handler
 {
-private:
+protected:
   enum partition_index_scan_type
   {
     partition_index_read= 0,
@@ -564,7 +564,7 @@ public:
   {
     m_file[part_id]->update_create_info(create_info);
   }
-private:
+protected:
   int copy_partitions(ulonglong * const copied, ulonglong * const deleted);
   void cleanup_new_partition(uint part_count);
   int prepare_new_partition(TABLE *table, HA_CREATE_INFO *create_info,
@@ -581,14 +581,14 @@ private:
     underlying partitions, their engine and the number of partitions.
     And one method to read it in.
   */
-  bool create_handler_file(const char *name);
+  virtual bool create_handler_file(const char *name);
   bool setup_engine_array(MEM_ROOT *mem_root, handlerton *first_engine);
   bool read_par_file(const char *name);
   handlerton *get_def_part_engine(const char *name);
   bool get_from_handler_file(const char *name, MEM_ROOT *mem_root,
                              bool is_clone);
   bool new_handlers_from_part_info(MEM_ROOT *mem_root);
-  bool create_handlers(MEM_ROOT *mem_root);
+  virtual bool create_handlers(MEM_ROOT *mem_root);
   void clear_handler_file();
   int set_up_table_before_create(TABLE *table_arg,
                                  const char *partition_name_with_path,
@@ -728,7 +728,7 @@ public:
     @remark This method is a partitioning-specific hook
             and thus not a member of the general SE API.
   */
-  int truncate_partition(Alter_info *, bool *binlog_stmt);
+  virtual int truncate_partition(Alter_info *, bool *binlog_stmt);
 
   bool is_fatal_error(int error, uint flags) override
   {
