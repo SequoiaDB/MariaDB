@@ -8861,8 +8861,8 @@ ulong get_column_grant(THD *thd, GRANT_INFO *grant,
 
 /* Help function for mysql_show_grants */
 
-static void add_user_option(String *grant, long value, const char *name,
-                            bool is_signed)
+void add_user_option(String *grant, long value, const char *name,
+                     bool is_signed)
 {
   if (value)
   {
@@ -8876,7 +8876,7 @@ static void add_user_option(String *grant, long value, const char *name,
 }
 
 
-static void add_user_option(String *grant, double value, const char *name)
+void add_user_option(String *grant, double value, const char *name)
 {
   if (value != 0.0 )
   {
@@ -8888,6 +8888,50 @@ static void add_user_option(String *grant, double value, const char *name)
     len= my_fcvt(value, 6, buff, NULL);
     grant->append(buff, len);
   }
+}
+
+void add_user_parameters(String * result, const LEX_USER *lex_user)
+{
+  mysql_mutex_lock(&acl_cache->lock);
+  ACL_USER *acl_user = find_user_exact(lex_user->host.str, lex_user->user.str);
+  DBUG_ASSERT(NULL != acl_user);
+
+  result->append('\'');
+  result->append(acl_user->user.str, acl_user->user.length,
+                 system_charset_info);
+  result->append(STRING_WITH_LEN("'@'"));
+  result->append(acl_user->host.hostname, acl_user->hostname_length,
+                 system_charset_info);
+  result->append('\'');
+
+  if (acl_user->nauth == 1 &&
+      (acl_user->auth->plugin.str == native_password_plugin_name.str ||
+       acl_user->auth->plugin.str == old_password_plugin_name.str))
+  {
+    if (acl_user->auth->auth_string.length)
+    {
+      result->append(STRING_WITH_LEN(" IDENTIFIED BY PASSWORD '"));
+      result->append(&acl_user->auth->auth_string);
+      result->append('\'');
+    }
+  }
+  else
+  {
+    result->append(STRING_WITH_LEN(" IDENTIFIED VIA "));
+    for (uint i=0; i < acl_user->nauth; i++)
+    {
+      if (i)
+        result->append(STRING_WITH_LEN(" OR "));
+      result->append(&acl_user->auth[i].plugin);
+      if (acl_user->auth[i].auth_string.length)
+      {
+        result->append(STRING_WITH_LEN(" USING '"));
+        result->append(&acl_user->auth[i].auth_string);
+        result->append('\'');
+      }
+    }
+  }
+  mysql_mutex_unlock(&acl_cache->lock);
 }
 
 static void add_user_parameters(THD *thd, String *result, ACL_USER* acl_user,
@@ -8982,7 +9026,7 @@ static void add_user_parameters(THD *thd, String *result, ACL_USER* acl_user,
   }
 }
 
-static const char *command_array[]=
+const char *command_array[]=
 {
   "SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "RELOAD",
   "SHUTDOWN", "PROCESS","FILE", "GRANT", "REFERENCES", "INDEX",
@@ -8993,7 +9037,7 @@ static const char *command_array[]=
   "DELETE HISTORY"
 };
 
-static uint command_lengths[]=
+uint command_lengths[]=
 {
   6, 6, 6, 6, 6, 4, 6, 8, 7, 4, 5, 10, 5, 5, 14, 5, 23, 11, 7, 17, 18, 11, 9,
   14, 13, 11, 5, 7, 17, 14,

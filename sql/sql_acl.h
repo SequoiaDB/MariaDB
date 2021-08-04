@@ -206,7 +206,16 @@ static inline int access_denied_error_code(int passwd_used)
 #endif
 }
 
+
+extern const char *command_array[];
+extern uint        command_lengths[];
+extern void add_user_option(String *grant, long value, const char *name,
+                            bool is_signed);
+extern void add_user_option(String *grant, double value, const char *name);
+
 /* prototypes */
+
+void add_user_parameters(String *result, const LEX_USER *lex_user);
 
 bool hostname_requires_resolving(const char *hostname);
 bool  acl_init(bool dont_read_acl_tables);
