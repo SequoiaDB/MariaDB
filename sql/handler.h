@@ -1062,6 +1062,8 @@ typedef bool (stat_print_fn)(THD *thd, const char *type, size_t type_len,
 enum ha_stat_type { HA_ENGINE_STATUS, HA_ENGINE_LOGS, HA_ENGINE_MUTEX };
 extern MYSQL_PLUGIN_IMPORT st_plugin_int *hton2plugin[MAX_HA];
 
+handlerton *get_installed_htons(enum legacy_db_type db_type);
+
 /*
   Definitions for engine-specific table/field/index options in the CREATE TABLE.
 

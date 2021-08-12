@@ -7141,6 +7141,11 @@ void handler::unlock_shared_ha_data()
     mysql_mutex_unlock(&table_share->LOCK_ha_data);
 }
 
+handlerton *get_installed_htons(enum legacy_db_type db_type)
+{
+  return installed_htons[db_type];
+}
+
 void handler::set_lock_type(enum thr_lock_type lock)
 {
   table->reginfo.lock_type= lock;
