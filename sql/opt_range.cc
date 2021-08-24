@@ -1510,6 +1510,7 @@ int QUICK_RANGE_SELECT::init_ror_merged_scan(bool reuse_handler,
     {
       DBUG_RETURN(1);
     }
+    file->extra(HA_EXTRA_SECONDARY_SORT_ROWID);
     goto end;
   }
 
@@ -1545,6 +1546,7 @@ int QUICK_RANGE_SELECT::init_ror_merged_scan(bool reuse_handler,
   }
   free_file= TRUE;
   last_rowid= file->ref;
+  file->extra(HA_EXTRA_SECONDARY_SORT_ROWID);
 
 end:
   /*

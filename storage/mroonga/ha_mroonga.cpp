@@ -559,6 +559,9 @@ static const char *mrn_inspect_extra_function(enum ha_extra_function operation)
   case HA_EXTRA_DEL_REN_PART_TABLE:
     inspected = "HA_EXTRA_DEL_REN_PART_TABLE";
     break;
+  case HA_EXTRA_SECONDARY_SORT_ROWID:
+    inspected = "HA_EXTRA_SECONDARY_SORT_ROWID";
+    break;
 #ifdef MRN_HAVE_HA_EXTRA_EXPORT
   case HA_EXTRA_EXPORT:
     inspected = "HA_EXTRA_EXPORT";
