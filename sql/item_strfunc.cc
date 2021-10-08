@@ -47,6 +47,8 @@
 #include "des_key_file.h"       // st_des_keyschedule, st_des_keyblock
 #include "password.h"           // my_make_scrambled_password,
                                 // my_make_scrambled_password_323
+#include "openssl/des.h"
+
 #include <m_ctype.h>
 #include <my_md5.h>
 C_MODE_START
@@ -2310,7 +2312,7 @@ String *Item_func_encrypt::val_str(String *str)
     salt_ptr= salt_str->c_ptr_safe();
   }
   mysql_mutex_lock(&LOCK_crypt);
-  char *tmp= crypt(res->c_ptr_safe(),salt_ptr);
+  char *tmp= DES_crypt(res->c_ptr_safe(),salt_ptr);
   if (!tmp)
   {
     mysql_mutex_unlock(&LOCK_crypt);
