@@ -58,6 +58,9 @@ IF(HAVE_PAM_APPL_H AND HAVE_GETGROUPLIST)
       SET(CPACK_RPM_server_USER_FILELIST ${CPACK_RPM_server_USER_FILELIST} "%config(noreplace) ${INSTALL_PAMDATADIRABS}/*" PARENT_SCOPE)
     ENDIF()
   ENDIF()
+ELSE()
+  MESSAGE(FATAL_ERROR "Could not find Linux PAM, please install using:\n"
+          "RedHat/CentOS: yum install pam-devel, Ubuntu: apt-get install libpam0g-dev.")
 ENDIF()
 
 CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/config.h.cmake
