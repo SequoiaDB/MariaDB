@@ -2394,15 +2394,17 @@ uint ha_partition::del_ren_table(const char *from, const char *to)
                                                  to_path, name_buffer_ptr,
                                                  NORMAL_PART_NAME, FALSE))))
         goto rename_error;
-      (*file)->extra(HA_EXTRA_DEL_REN_PART_TABLE);
+      (*file)->before_del_ren_part();
       error= (*file)->ha_rename_table(from_buff, to_buff);
+      (*file)->after_del_ren_part();
       if (unlikely(error))
         goto rename_error;
     }
     else                                        // delete branch
     {
-      (*file)->extra(HA_EXTRA_DEL_REN_PART_TABLE);
+      (*file)->before_del_ren_part();
       error= (*file)->ha_delete_table(from_buff);
+      (*file)->after_del_ren_part();
     }
     name_buffer_ptr= strend(name_buffer_ptr) + 1;
     if (unlikely(error))

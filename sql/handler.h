@@ -3782,6 +3782,12 @@ public:
   { return 0; }
   virtual int extra(enum ha_extra_function operation)
   { return 0; }
+  /* Only for partition table of SequoiaDB  */
+  virtual int before_del_ren_part()
+  { return 0; }
+  /* Only for partition table of SequoiaDB  */
+  virtual int after_del_ren_part()
+  { return 0; }
   virtual int extra_opt(enum ha_extra_function operation, ulong arg)
   { return extra(operation); }
 
