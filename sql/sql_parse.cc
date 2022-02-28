@@ -4065,7 +4065,7 @@ mysql_execute_command(THD *thd)
                       thd->get_stmt_da()->is_error() ?
                       thd->get_stmt_da()->sql_errno() : 0,
                       command_name[COM_QUERY].str);
-  if (thd->check_killed()) {
+  if (thd->get_stmt_da()->is_error()) {
   	goto error;
   }
 
