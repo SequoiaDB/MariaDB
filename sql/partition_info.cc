@@ -1396,8 +1396,8 @@ bool partition_info::check_partition_info(THD *thd, handlerton **eng_type,
     if (vers_info->limit == 0 && !vers_info->interval.is_set())
     {
       if(0 == strcmp("SequoiaDB", ha_resolve_storage_engine_name(table_engine))) {
-        my_error(ER_VERS_NOT_SUPPORTED, MYF(0), "ADD PARTITION and
-                 REORGANIZE PARTITION");
+        my_error(ER_VERS_NOT_SUPPORTED, MYF(0), "ADD PARTITION and REORGANIZE "
+                 "PARTITION");
       }else {
         push_warning_printf(thd,
             Sql_condition::WARN_LEVEL_WARN,
