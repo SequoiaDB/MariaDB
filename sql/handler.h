@@ -3128,7 +3128,7 @@ public:
   handler(handlerton *ht_arg, TABLE_SHARE *share_arg)
     :table_share(share_arg), table(0),
     estimation_rows_to_insert(0), ht(ht_arg),
-    ref(0), end_range(NULL),
+    ref(0), mrr_iter(NULL), end_range(NULL),
     implicit_emptied(0),
     mark_trx_read_write_done(0),
     check_table_binlog_row_based_done(0),
