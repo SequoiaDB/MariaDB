@@ -161,5 +161,6 @@ public:
     file= file_arg;
     init();                                     /* Update cached_table_flags */
   }
+  int reset();
 };
 #endif

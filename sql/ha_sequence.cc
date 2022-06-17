@@ -373,6 +373,14 @@ void ha_sequence::print_error(int error, myf errflag)
   DBUG_VOID_RETURN;
 }
 
+int ha_sequence::reset()
+{
+  if(0 == strcmp("SequoiaDB", ha_resolve_storage_engine_name(file->ht))) {
+    return file->reset();
+  }
+  return 0;
+}
+
 /*****************************************************************************
   Sequence plugin interface
 *****************************************************************************/
