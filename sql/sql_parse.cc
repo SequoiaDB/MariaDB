@@ -107,6 +107,7 @@
 #define PRIV_LOCK_TABLES (SELECT_ACL | LOCK_TABLES_ACL)
 
 extern const bool sdb_sql_pushdown;
+extern bool ha_is_open();
 
 #define FLAGSTR(V,F) ((V)&(F)?#F" ":"")
 
@@ -1580,6 +1581,45 @@ void reset_execution_ctx(THD *thd, char *beginning_of_next_stmt,
     thd->set_time();
 }
 
+// Retry current statement for 'server_ha' module
+void retry_current_statement(THD *thd, Parser_state &parser_state,
+                             char *query, ulong query_length,
+                             bool is_com_multi, bool is_next_command,
+                             enum enum_server_command command)
+{
+  if (ha_is_open())
+  {
+    static const int MAX_RETRY_TIMES= 10;
+    int times= 0;
+    // If current statement contains routines, it will not be retried.
+    // Because before the statement is executed, 'server_ha' will wait
+    // objects contained in the statement to be updated(updated by
+    // replay thread) to its latest state.
+    bool need_retry= (!thd->lex->sroutines_list.elements);
+    while (thd->is_error() && need_retry && times++ < MAX_RETRY_TIMES)
+    {
+      uint mysql_errno= thd->get_stmt_da()->sql_errno();
+      // Prepare retry flag for current statement. If retry flag is
+      // set, diagnostics area in current THD will be reset
+      mysql_audit_general(thd, 0, 0, "SetDMLRetryFlag");
+      need_retry= (mysql_errno && !thd->get_stmt_da()->is_set());
+      if (need_retry)
+      {
+        sleep(1);
+        reset_execution_ctx(thd, query, query_length, command);
+        parser_state.reset(query, query_length);
+        mysql_parse(thd, query, query_length, &parser_state,
+                    is_com_multi, is_next_command);
+      }
+      // Reset retry flag
+      mysql_audit_general(thd, 0, 0, "ResetDMLRetryFlag");
+    }
+    // Clear checked objects cache
+    mysql_audit_general(thd, 0, 0, "ResetCheckedObjects");
+  }
+  thd->is_result_set_started= FALSE;
+}
+
 /**
   Perform one connection-level (COM_XXXX) command.
 
@@ -1999,37 +2039,11 @@ original_step:
       mysql_parse(thd, thd->query(), thd->query_length(), &parser_state,
                   is_com_multi, is_next_command);
     
-    // sequoiadb-sql DML retry 
-    {
-      extern char *ha_inst_group_name;
-      if (thd->get_stmt_da()->is_error() && ha_inst_group_name && 
-        0 != strlen(ha_inst_group_name) &&
-        // does not include any routines
-        0 == thd->lex->sroutines_list.elements) {
-        uint mysql_errno = thd->get_stmt_da()->sql_errno();
-        // notify HA set retry flag
-        mysql_audit_general(thd, 0, 0, "SetDMLRetryFlag");
-        if (mysql_errno && !thd->get_stmt_da()->is_set())
-        {
-          char *beginning_of_next_stmt = (char*)thd->query();
-          ulong length= (ulong)(thd->query_length());
-          reset_execution_ctx(thd, beginning_of_next_stmt, length, command);
-          parser_state.reset(beginning_of_next_stmt, length);
-          
-          mysql_parse(thd, beginning_of_next_stmt, length, &parser_state,
-                      is_com_multi, is_next_command);
-        }
-        // reset retry flag
-        mysql_audit_general(thd, 0, 0, "ResetDMLRetryFlag");
-      }
-      // clear checked objects cache
-      if (ha_inst_group_name && 0 != strlen(ha_inst_group_name))
-      {
-        mysql_audit_general(thd, 0, 0, "ResetCheckedObjects");
-      }
-      thd->is_result_set_started= FALSE;
-    }
-                  
+    // Retry current statement if got specical errors
+    retry_current_statement(thd, parser_state, (char*)thd->query(),
+                            (ulong)(thd->query_length()), is_com_multi,
+                            is_next_command, command);
+
     while (!thd->killed && (parser_state.m_lip.found_semicolon != NULL) &&
            ! thd->is_error())
     {
@@ -2148,36 +2162,12 @@ original_step:
 #endif /* WITH_WSREP */
       mysql_parse(thd, beginning_of_next_stmt, length, &parser_state,
                   is_com_multi, is_next_command);
-      
-      // sequoiadb-sql DML retry 
-      {
-        extern char *ha_inst_group_name;
-        if (thd->get_stmt_da()->is_error() && ha_inst_group_name && 
-          0 != strlen(ha_inst_group_name) &&
-          // does not include any routines
-          0 == thd->lex->sroutines_list.elements)
-        {
-          uint mysql_errno = thd->get_stmt_da()->sql_errno();
-          // notify HA set retry flag
-          mysql_audit_general(thd, 0, 0, "SetDMLRetryFlag");
-          if (mysql_errno && !thd->get_stmt_da()->is_set()) 
-          {
-            reset_execution_ctx(thd, beginning_of_next_stmt, length, command);
-            parser_state.reset(beginning_of_next_stmt, length);
-            
-            mysql_parse(thd, beginning_of_next_stmt, length, &parser_state,
-                        is_com_multi, is_next_command);
-          }
-          // reset retry flag
-          mysql_audit_general(thd, 0, 0, "ResetDMLRetryFlag");
-        }
-        // clear checked objects cache
-        if (ha_inst_group_name && 0 != strlen(ha_inst_group_name)) 
-        {
-          mysql_audit_general(thd, 0, 0, "ResetCheckedObjects");
-        }
-        thd->is_result_set_started= FALSE;
-      }
+
+      // Retry current statement if got specical errors
+      retry_current_statement(thd, parser_state, beginning_of_next_stmt,
+                              length, is_com_multi,
+                              is_next_command, command);
+
       if (!thd->killed && thd->is_error() &&
           (THD::PREPARE_STEP == thd->sdb_sql_exec_step ||
            THD::EXEC_STEP == thd->sdb_sql_exec_step)) {
