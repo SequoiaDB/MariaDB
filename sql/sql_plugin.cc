@@ -3384,7 +3384,8 @@ static SHOW_TYPE pluginvar_show_type(const st_mysql_sys_var *plugin_var)
 static int pluginvar_sysvar_flags(const st_mysql_sys_var *p)
 {
   return (p->flags & PLUGIN_VAR_THDLOCAL ? sys_var::SESSION : sys_var::GLOBAL)
-       | (p->flags & PLUGIN_VAR_READONLY ? sys_var::READONLY : 0);
+       | (p->flags & PLUGIN_VAR_READONLY ? sys_var::READONLY : 0)
+       | (p->flags & PLUGIN_VAR_HIDDEN ? sys_var::HIDDEN : 0);
 }
 
 sys_var_pluginvar::sys_var_pluginvar(sys_var_chain *chain, const char *name_arg,
@@ -3960,7 +3961,7 @@ static int construct_options(MEM_ROOT *mem_root, struct st_plugin_int *tmp,
     convert_underscore_to_dash(optname, optnamelen);
 
     options->name= optname;
-    options->comment= opt->comment;
+    options->comment= (opt->flags & PLUGIN_VAR_HIDDEN) ? NULL : opt->comment;
     options->app_type= (opt->flags & PLUGIN_VAR_NOSYSVAR) ? NULL : opt;
     options->id= 0;
 

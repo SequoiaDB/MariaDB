@@ -175,7 +175,7 @@ sys_var::sys_var(sys_var_chain *chain, const char *name_arg,
   bzero(&option, sizeof(option));
   option.name= name_arg;
   option.id= getopt_id;
-  option.comment= comment;
+  option.comment= (flags & HIDDEN) ? NULL : comment;
   option.arg_type= getopt_arg_type;
   option.value= (uchar **)global_var_ptr();
   option.def_value= def_val;
@@ -654,6 +654,12 @@ SHOW_VAR* enumerate_sys_vars(THD *thd, bool sorted, enum enum_var_type scope)
       // don't show session-only variables in SHOW GLOBAL VARIABLES
       if (scope == OPT_GLOBAL && var->check_type(scope))
         continue;
+
+      // don't show the hidden inner variables
+      if (var->is_hidden())
+      {
+        continue;
+      }
 
       show->name= var->name.str;
       show->value= (char*) var;

@@ -6409,6 +6409,13 @@ static Sys_var_enum Sys_secure_timestamp(
        READ_ONLY GLOBAL_VAR(opt_secure_timestamp), CMD_LINE(REQUIRED_ARG),
        secure_timestamp_levels, DEFAULT(SECTIME_NO));
 
+static Sys_var_uint Sys_server_ha_dml_max_retry_count(
+       "server_ha_dml_max_retry_count",
+       "The maximum number of retries required for current DML.",
+       HIDDEN SESSION_VAR(server_ha_dml_max_retry_count),
+       CMD_LINE(OPT_ARG), VALID_RANGE(0, 100),
+       DEFAULT(1), BLOCK_SIZE(1));
+
 static Sys_var_ulonglong Sys_max_rowid_filter_size(
        "max_rowid_filter_size",
        "The maximum size of the container of a rowid filter",

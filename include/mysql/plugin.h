@@ -243,6 +243,7 @@ struct st_mysql_show_var SHOW_FUNC_ENTRY(const char *name,
 #define PLUGIN_VAR_OPCMDARG     0x2000 /* Argument optional for cmd line */
 #define PLUGIN_VAR_DEPRECATED   0x4000 /* Server variable is deprecated */
 #define PLUGIN_VAR_MEMALLOC     0x8000 /* String needs memory allocated */
+#define PLUGIN_VAR_HIDDEN       0x10000 /* Variable should not be shown */
 
 struct st_mysql_sys_var;
 struct st_mysql_value;
@@ -296,7 +297,8 @@ typedef void (*mysql_var_update_func)(MYSQL_THD thd,
         (PLUGIN_VAR_READONLY | PLUGIN_VAR_NOSYSVAR | \
          PLUGIN_VAR_NOCMDOPT | PLUGIN_VAR_NOCMDARG | \
          PLUGIN_VAR_OPCMDARG | PLUGIN_VAR_RQCMDARG | \
-         PLUGIN_VAR_DEPRECATED | PLUGIN_VAR_MEMALLOC)
+         PLUGIN_VAR_DEPRECATED | PLUGIN_VAR_MEMALLOC | \
+         PLUGIN_VAR_HIDDEN)
 
 #define MYSQL_PLUGIN_VAR_HEADER \
   int flags;                    \
