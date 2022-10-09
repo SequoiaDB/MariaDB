@@ -1605,7 +1605,6 @@ void retry_current_statement(THD *thd, Parser_state &parser_state,
       need_retry= (mysql_errno && !thd->get_stmt_da()->is_set());
       if (need_retry)
       {
-        sleep(1);
         reset_execution_ctx(thd, query, query_length, command);
         parser_state.reset(query, query_length);
         mysql_parse(thd, query, query_length, &parser_state,
