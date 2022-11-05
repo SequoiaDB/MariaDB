@@ -8890,48 +8890,85 @@ void add_user_option(String *grant, double value, const char *name)
   }
 }
 
-void add_user_parameters(String * result, const LEX_USER *lex_user)
-{
-  mysql_mutex_lock(&acl_cache->lock);
-  ACL_USER *acl_user = find_user_exact(lex_user->host.str, lex_user->user.str);
-  DBUG_ASSERT(NULL != acl_user);
+void add_user_parameters(String *result, const LEX_USER *combo) {
+  uint nauth= 0;
+  ACL_USER new_acl_user;
+  THD *thd= current_thd;
+  SELECT_LEX *select_lex= thd->lex->first_select_lex();
+  ulong rights= (!select_lex->db.str ? thd->lex->grant : 0);
 
-  result->append('\'');
-  result->append(acl_user->user.str, acl_user->user.length,
-                 system_charset_info);
-  result->append(STRING_WITH_LEN("'@'"));
-  result->append(acl_user->host.hostname, acl_user->hostname_length,
-                 system_charset_info);
-  result->append('\'');
-
-  if (acl_user->nauth == 1 &&
-      (acl_user->auth->plugin.str == native_password_plugin_name.str ||
-       acl_user->auth->plugin.str == old_password_plugin_name.str))
+  // Prepare build ACL_USER
+  for (USER_AUTH *auth= combo->auth; auth; auth= auth->next)
   {
-    if (acl_user->auth->auth_string.length)
+    nauth++;
+    if (auth->plugin.length)
+    {
+      if (!plugin_is_ready(&auth->plugin, MYSQL_AUTHENTICATION_PLUGIN))
+      {
+        /* purecov: begin inspected */
+        my_error(ER_PLUGIN_IS_NOT_LOADED, MYF(0), auth->plugin.str);
+        goto end;
+        /* purecov: end */
+      }
+    }
+    else
+      auth->plugin= guess_auth_plugin(thd, auth->auth_str.length);
+  }
+
+  // Build an ACL_USER from LEX_USER
+  new_acl_user= ACL_USER(thd, *combo, thd->lex->account_options, 0);
+  if (acl_user_update(thd, &new_acl_user, nauth, *combo,
+                      thd->lex->account_options, rights))
+  {
+    /* purecov: begin inspected */
+    my_error(ER_OUT_OF_RESOURCES, MYF(0));
+    goto end;
+    /* purecov: begin inspected */
+  }
+
+  // Append ACL_USER
+  result->append(" \'");
+  result->append(combo->user.str);
+  result->append('\'');
+  result->append(STRING_WITH_LEN("@'"));
+  result->append(new_acl_user.host.hostname, new_acl_user.hostname_length,
+                 system_charset_info);
+  result->append('\'');
+
+  if (new_acl_user.nauth == 1 &&
+      (new_acl_user.auth->plugin.str == native_password_plugin_name.str ||
+       new_acl_user.auth->plugin.str == old_password_plugin_name.str))
+  {
+    if (new_acl_user.auth->auth_string.length)
     {
       result->append(STRING_WITH_LEN(" IDENTIFIED BY PASSWORD '"));
-      result->append(&acl_user->auth->auth_string);
+      result->append(&new_acl_user.auth->auth_string);
       result->append('\'');
+    }
+    else
+    {
+      result->append(STRING_WITH_LEN(" IDENTIFIED VIA "));
+      result->append(&new_acl_user.auth->plugin);
     }
   }
   else
   {
     result->append(STRING_WITH_LEN(" IDENTIFIED VIA "));
-    for (uint i=0; i < acl_user->nauth; i++)
+    for (uint i=0; i < new_acl_user.nauth; i++)
     {
       if (i)
         result->append(STRING_WITH_LEN(" OR "));
-      result->append(&acl_user->auth[i].plugin);
-      if (acl_user->auth[i].auth_string.length)
+      result->append(&new_acl_user.auth[i].plugin);
+      if (new_acl_user.auth[i].auth_string.length)
       {
         result->append(STRING_WITH_LEN(" USING '"));
-        result->append(&acl_user->auth[i].auth_string);
+        result->append(&new_acl_user.auth[i].auth_string);
         result->append('\'');
       }
     }
   }
-  mysql_mutex_unlock(&acl_cache->lock);
+end:
+  return ;
 }
 
 static void add_user_parameters(THD *thd, String *result, ACL_USER* acl_user,
