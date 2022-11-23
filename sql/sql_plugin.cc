@@ -3946,6 +3946,11 @@ static int construct_options(MEM_ROOT *mem_root, struct st_plugin_int *tmp,
         if (((opt->flags & PLUGIN_VAR_TYPEMASK) == PLUGIN_VAR_STR) &&
              (opt->flags & PLUGIN_VAR_MEMALLOC))
         {
+          char **ptr = (char**)(global_system_variables.dynamic_variables_ptr + offset);
+          if(*ptr) {
+            my_free(*ptr);
+            *ptr = NULL;
+          }
           char *def_val= *(char**)var_def_ptr(opt);
           *(char**)val= def_val ? my_strdup(def_val, MYF(0)) : NULL;
         }
