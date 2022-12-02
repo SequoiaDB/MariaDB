@@ -63,6 +63,7 @@
 #ifdef __WIN__
 #include <io.h>
 #endif
+extern bool ha_is_open();
 
 const char *primary_key_name="PRIMARY";
 
@@ -3078,9 +3079,10 @@ static bool key_cmp(const Key_part_spec &a, const Key_part_spec &b)
   @param key              Key to be checked.
   @param key_info         Key meta-data info.
   @param key_list         List of existing keys.
+  @param engine_name        Storage engine name.
 */
 static void check_duplicate_key(THD *thd, const Key *key, const KEY *key_info,
-                                const List<Key> *key_list)
+                                const List<Key> *key_list, const char *engine_name)
 {
   /*
     We only check for duplicate indexes if it is requested and the
@@ -3113,6 +3115,9 @@ static void check_duplicate_key(THD *thd, const Key *key, const KEY *key_info,
     {
       push_warning_printf(thd, Sql_condition::WARN_LEVEL_NOTE, ER_DUP_INDEX,
                           ER_THD(thd, ER_DUP_INDEX), key_info->name.str);
+      if (engine_name && 0 == strcmp("SequoiaDB", engine_name) && ha_is_open())
+        my_printf_error(ER_DUP_INDEX, "Duplicate index '%-.64s'.",
+                        MYF(0), key_info->name.str);
       return;
     }
   }
@@ -4241,7 +4246,11 @@ mysql_prepare_create_table(THD *thd, HA_CREATE_INFO *create_info,
     }
 
     // Check if a duplicate index is defined.
-    check_duplicate_key(thd, key, key_info, &alter_info->key_list);
+    check_duplicate_key(thd, key, key_info, &alter_info->key_list,
+                        file->engine_name()->str);
+    if (thd->is_error())
+      DBUG_RETURN(TRUE);
+
     key_info++;
   }
 
