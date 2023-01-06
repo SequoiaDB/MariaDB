@@ -2016,6 +2016,8 @@ original_step:
     char *restore_sql = NULL;
     static const int len_of_restore_sql = 150;
     Diagnostics_area *da= thd->get_stmt_da();
+    char *original_query= (char*)thd->query();
+    ulong query_length= (ulong)(thd->query_length());
     if (unlikely(parser_state.init(thd, thd->query(), thd->query_length())))
       break;
 #ifdef WITH_WSREP
@@ -2039,8 +2041,8 @@ original_step:
                   is_com_multi, is_next_command);
     
     // Retry current statement if got specical errors
-    retry_current_statement(thd, parser_state, (char*)thd->query(),
-                            (ulong)(thd->query_length()), is_com_multi,
+    retry_current_statement(thd, parser_state, original_query,
+                            query_length, is_com_multi,
                             is_next_command, command);
 
     while (!thd->killed && (parser_state.m_lip.found_semicolon != NULL) &&
