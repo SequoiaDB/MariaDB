@@ -219,7 +219,9 @@ enum ha_extra_function {
   /** Mark writing row of SETVAL for sequence */
   HA_EXTRA_SET_VALUE,
   /** Do secondary sort by handler::ref (rowid) after key sort. */
-  HA_EXTRA_SECONDARY_SORT_ROWID
+  HA_EXTRA_SECONDARY_SORT_ROWID,
+  /** Inform handler that we will execute a group min max plan */
+  HA_EXTRA_GROUP_MIN_MAX
 };
 
 /* Compatible option, to be deleted in 6.0 */

@@ -15012,6 +15012,9 @@ int QUICK_GROUP_MIN_MAX_SELECT::reset(void)
 
   seen_first_key= FALSE;
   head->file->ha_start_keyread(index); /* We need only the key attributes */
+  if (is_sdb_engine_table(head)) {
+    head->file->extra(HA_EXTRA_GROUP_MIN_MAX);
+  }
 
   if ((result= file->ha_index_init(index,1)))
   {

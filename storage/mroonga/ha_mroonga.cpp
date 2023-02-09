@@ -599,6 +599,8 @@ static const char *mrn_inspect_extra_function(enum ha_extra_function operation)
     inspected = "HA_EXTRA_NO_AUTOINC_LOCKING";
     break;
 #endif
+  case HA_EXTRA_GROUP_MIN_MAX:
+    break;
   }
   return inspected;
 }
