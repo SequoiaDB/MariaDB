@@ -6911,8 +6911,8 @@ ER_PLUGIN_DELETE_BUILTIN
         eng "Built-in plugins cannot be deleted"
         ger "Eingebaute Plugins können nicht gelöscht werden"
 WARN_PLUGIN_BUSY
-        chi "插件很忙，将在关机时卸载"
-        eng "Plugin is busy and will be uninstalled on shutdown"
+        chi "在关闭实例之前重新安装插件可能会导致不可预测的结果"
+        eng "Reinstalling the plugin before instance shutdown may result in unpredictable result"
         ger "Plugin wird verwendet und wird erst beim Herunterfahren deinstalliert"
 ER_VARIABLE_IS_READONLY
         chi "%s变量'%s'是只读的。使用set%s付值"
