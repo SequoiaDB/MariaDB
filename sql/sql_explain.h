@@ -655,6 +655,7 @@ class Explain_quick_select : public Sql_alloc
 public:
   Explain_quick_select(int quick_type_arg) : quick_type(quick_type_arg) 
   {}
+  virtual ~Explain_quick_select(){}
 
   const int quick_type;
 
@@ -678,6 +679,20 @@ public:
   void print_json(Json_writer *writer);
 
   void print_extra_recursive(String *str);
+private:
+  virtual const char *get_name_by_type();
+};
+
+
+/*
+  QPF for sequoiadb quick range selects, as well as index_merge select
+*/
+class Explain_sdb_quick_select : public Explain_quick_select
+{
+public:
+  Explain_sdb_quick_select(int quick_type_arg) : Explain_quick_select(quick_type_arg)
+  {}
+
 private:
   const char *get_name_by_type();
 };

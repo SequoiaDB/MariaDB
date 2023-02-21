@@ -1565,7 +1565,12 @@ end:
 
   /* Restore head->read_set (and write_set) to what they had before the call */
   head->column_bitmaps_set(save_read_set, save_write_set);
- 
+  
+  //TODO: The optimization of 'keyread' is not required for SequoiaDB
+  if(0 == strcmp("SequoiaDB", ha_resolve_storage_engine_name(head->file->ht))) {
+    bitmap_copy(&column_bitmap, head->read_set);
+  }
+
   if (reset())
   {
     if (!reuse_handler)
@@ -7548,29 +7553,53 @@ QUICK_SELECT_I *TRP_INDEX_MERGE::make_quick(PARAM *param,
                                             bool retrieve_full_rows,
                                             MEM_ROOT *parent_alloc)
 {
-  QUICK_INDEX_MERGE_SELECT *quick_imerge;
-  QUICK_RANGE_SELECT *quick;
+  MEM_ROOT *alloc = NULL;
+  QUICK_RANGE_SELECT *quick = NULL;
+  QUICK_SELECT_I *quick_imerge = NULL;
+  
   /* index_merge always retrieves full rows, ignore retrieve_full_rows */
-  if (!(quick_imerge= new QUICK_INDEX_MERGE_SELECT(param->thd, param->table)))
-    return NULL;
+  if(0 == strcmp("SequoiaDB", ha_resolve_storage_engine_name(param->table->file->ht))) {
+    QUICK_SDB_INDEX_MERGE_SELECT *sdb_quick_imerge = NULL;
+    sdb_quick_imerge = new QUICK_SDB_INDEX_MERGE_SELECT(param->thd, param->table);
+    if (!sdb_quick_imerge) {
+      return NULL;
+    }
+    alloc = &sdb_quick_imerge->alloc;
+    for (TRP_RANGE **range_scan= range_scans; range_scan != range_scans_end;
+        range_scan++) {
+      if (!(quick= (QUICK_RANGE_SELECT*)
+            ((*range_scan)->make_quick(param, FALSE, alloc))) ||
+          sdb_quick_imerge->push_quick_back(quick)) {
+        delete quick;
+        delete sdb_quick_imerge;
+        return NULL;
+      }
+    }
+    quick_imerge = sdb_quick_imerge;
+  } else {
+  QUICK_INDEX_MERGE_SELECT *basic_quick_imerge = NULL;
+    basic_quick_imerge = new QUICK_INDEX_MERGE_SELECT(param->thd, param->table);
+    if (!basic_quick_imerge) {
+      return NULL;
+    }
+    alloc = &basic_quick_imerge->alloc;
+    for (TRP_RANGE **range_scan= range_scans; range_scan != range_scans_end;
+        range_scan++) {
+      if (!(quick= (QUICK_RANGE_SELECT*)
+            ((*range_scan)->make_quick(param, FALSE, alloc))) ||
+          basic_quick_imerge->push_quick_back(quick)) {
+        delete quick;
+        delete basic_quick_imerge;
+        return NULL;
+      }
+    }
+    quick_imerge = basic_quick_imerge;
+  }
 
   quick_imerge->records= records;
   quick_imerge->read_time= read_cost;
-  for (TRP_RANGE **range_scan= range_scans; range_scan != range_scans_end;
-       range_scan++)
-  {
-    if (!(quick= (QUICK_RANGE_SELECT*)
-          ((*range_scan)->make_quick(param, FALSE, &quick_imerge->alloc)))||
-        quick_imerge->push_quick_back(quick))
-    {
-      delete quick;
-      delete quick_imerge;
-      return NULL;
-    }
-  }
   return quick_imerge;
 }
-
 
 QUICK_SELECT_I *TRP_INDEX_INTERSECT::make_quick(PARAM *param,
                                                 bool retrieve_full_rows,
@@ -7657,28 +7686,51 @@ QUICK_SELECT_I *TRP_ROR_UNION::make_quick(PARAM *param,
                                           bool retrieve_full_rows,
                                           MEM_ROOT *parent_alloc)
 {
-  QUICK_ROR_UNION_SELECT *quick_roru;
-  TABLE_READ_PLAN **scan;
-  QUICK_SELECT_I *quick;
+  MEM_ROOT *alloc = NULL;
+  QUICK_SELECT_I *quick = NULL;
+  TABLE_READ_PLAN **scan = NULL;
+  QUICK_SELECT_I *quick_roru = NULL;
   DBUG_ENTER("TRP_ROR_UNION::make_quick");
+  
   /*
     It is impossible to construct a ROR-union that will not retrieve full
     rows, ignore retrieve_full_rows parameter.
   */
-  if ((quick_roru= new QUICK_ROR_UNION_SELECT(param->thd, param->table)))
-  {
-    for (scan= first_ror; scan != last_ror; scan++)
-    {
-      if (!(quick= (*scan)->make_quick(param, FALSE, &quick_roru->alloc)) ||
-          quick_roru->push_quick_back(quick))
-      {
-        delete quick_roru;
+  if(0 == strcmp("SequoiaDB", ha_resolve_storage_engine_name(param->table->file->ht))) {
+    QUICK_SDB_ROR_UNION_SELECT *sdb_quick_roru = NULL;
+    sdb_quick_roru = new QUICK_SDB_ROR_UNION_SELECT(param->thd, param->table);
+    if (!sdb_quick_roru) {
+      DBUG_RETURN(NULL);
+    }
+    alloc = &sdb_quick_roru->alloc;
+    for (scan= first_ror; scan != last_ror; scan++) {
+      if (!(quick= (QUICK_RANGE_SELECT*)((*scan)->make_quick(param, FALSE, alloc))) ||
+          sdb_quick_roru->push_quick_back(quick)) {
+        delete quick;
+        delete sdb_quick_roru;
         DBUG_RETURN(NULL);
       }
     }
-    quick_roru->records= records;
-    quick_roru->read_time= read_cost;
+    quick_roru = sdb_quick_roru;
+  } else {
+    QUICK_ROR_UNION_SELECT *basic_quick_roru = NULL;
+    basic_quick_roru =  new QUICK_ROR_UNION_SELECT(param->thd, param->table);
+    if (!basic_quick_roru) {
+      DBUG_RETURN(NULL);
+    }
+    alloc = &basic_quick_roru->alloc;
+    for (scan= first_ror; scan != last_ror; scan++) {
+      if (!(quick= (QUICK_RANGE_SELECT*)((*scan)->make_quick(param, FALSE, alloc))) ||
+          basic_quick_roru->push_quick_back(quick)) {
+        delete quick;
+        delete basic_quick_roru;
+        DBUG_RETURN(NULL);
+      }
+    }
+    quick_roru = basic_quick_roru;
   }
+  quick_roru->records= records;
+  quick_roru->read_time= read_cost;
   DBUG_RETURN(quick_roru);
 }
 
@@ -16250,3 +16302,332 @@ void print_keyparts_name(String *out, const KEY_PART_INFO *key_part,
   }
   out->append(STRING_WITH_LEN(")"));
 }
+
+// SequoiaDB optimizer index merge
+QUICK_SDB_INDEX_SORT_SELECT::QUICK_SDB_INDEX_SORT_SELECT(THD *thd_param, TABLE *table) {
+  DBUG_ENTER("QUICK_SDB_INDEX_SORT_SELECT::QUICK_SDB_INDEX_SORT_SELECT");
+
+  head = table;
+  unique = NULL;
+  thd = thd_param;
+  index = MAX_KEY;
+  cur_quick = NULL;
+  scans_inited = false; 
+  init_sql_alloc(&alloc, "QUICK_SDB_INDEX_SORT_SELECT", thd->variables.range_alloc_block_size,
+      0, MYF(MY_THREAD_SPECIFIC));
+  thd_param->mem_root = &alloc;
+  DBUG_VOID_RETURN;
+}
+
+QUICK_SDB_INDEX_SORT_SELECT::~QUICK_SDB_INDEX_SORT_SELECT() {
+  DBUG_ENTER("QUICK_SDB_INDEX_SORT_SELECT::~QUICK_SDB_INDEX_SORT_SELECT");
+
+  QUICK_SELECT_I* quick = NULL;
+  List_iterator_fast<QUICK_SELECT_I> quick_it(quick_selects);
+
+  delete unique;
+  quick_it.rewind();
+  while ((quick= quick_it++) && (QS_TYPE_RANGE == quick->get_type())) {
+    ((QUICK_RANGE_SELECT*)quick)->file= NULL;
+  }
+  quick_selects.delete_elements();
+  free_root(&alloc,MYF(0));
+  DBUG_VOID_RETURN;
+}
+
+int  QUICK_SDB_INDEX_SORT_SELECT::init() {
+  DBUG_ENTER("QUICK_SDB_INDEX_SORT_SELECT::init");
+  DBUG_RETURN(0); 
+}
+
+int  QUICK_SDB_INDEX_SORT_SELECT::reset(void) {
+  DBUG_ENTER("QUICK_SDB_INDEX_SORT_SELECT::reset");
+
+  int rc = 0;
+  handler *file= head->file;
+  QUICK_SELECT_I *quick = NULL;
+  List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
+
+  cur_quick_it.init(quick_selects);
+  cur_quick_it.rewind();
+  cur_quick = (QUICK_RANGE_SELECT*)(cur_quick_it++);
+  if (cur_quick->init() || cur_quick->reset()) {
+    rc = 1;
+    goto error;
+  }
+  if (unique == NULL) {
+    DBUG_EXECUTE_IF("index_merge_may_not_create_a_Unique", DBUG_ABORT(); );
+    DBUG_EXECUTE_IF("only_one_Unique_may_be_created", 
+        DBUG_SET("+d,index_merge_may_not_create_a_Unique"); );
+
+    unique= new Unique(refpos_order_cmp, (void *)file,
+        file->ref_length,
+        (size_t)thd->variables.sortbuff_size, 0);
+  } else {
+    unique->reset();
+  }
+  assert(file->ref_length == unique->get_size());
+  assert(thd->variables.sortbuff_size == unique->get_max_in_memory_size());
+
+  if (!unique) {
+    rc = 1;
+    goto error;
+  }
+
+  //TODO : do it in range::init_ror_merged_scan for union/sort_union
+  while ((quick= it++)) {
+    if(QS_TYPE_RANGE == quick->get_type()) {
+      quick->last_rowid = ((QUICK_RANGE_SELECT*)quick)->file->ref;
+    }
+  }
+
+done:
+  DBUG_RETURN(rc); 
+error:
+  goto done;
+}
+
+int  QUICK_SDB_INDEX_SORT_SELECT::get_next() {
+  DBUG_ENTER("QUICK_SDB_INDEX_SORT_SELECT::get_next");
+
+  int rc = 0;
+  int is_dups = -1;
+  uchar *rowid = NULL;
+
+  if(!cur_quick) {
+    cur_quick_it.rewind();
+    cur_quick = cur_quick_it++;
+  }
+
+  for(;;) {
+    if (thd->killed) {
+      rc = 1;
+      goto error;
+    }
+
+    rc = cur_quick->get_next();
+    if(rc == HA_ERR_END_OF_FILE) {
+      cur_quick->range_end();
+      cur_quick= cur_quick_it++;
+      if(!cur_quick) {
+        goto done;
+      }	
+      cur_quick->range_end();
+      if (cur_quick->init() || cur_quick->reset()) {
+        rc = 1;
+        goto error;
+      }  	
+      continue;
+    }else if(rc) {
+      cur_quick->range_end();
+      goto error;
+    }
+
+    cur_quick->save_last_pos();
+    rowid = cur_quick->last_rowid;
+
+    rc= unique->unique_add((char*)rowid, is_dups);
+    if (0 == is_dups) {
+      goto done;
+    }
+  }
+
+done:
+  DBUG_RETURN(rc);
+error:
+  goto done;
+}
+
+bool QUICK_SDB_INDEX_SORT_SELECT::push_quick_back(QUICK_SELECT_I *quick_sel_range) {
+  return quick_selects.push_back(quick_sel_range);
+}
+
+bool QUICK_SDB_INDEX_SORT_SELECT::is_valid() {
+  bool valid= true;
+  QUICK_SELECT_I *quick = NULL;
+  List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
+
+  while ((quick= it++)) {
+    if (!quick->is_valid()) {
+      valid= false;
+      break;
+    }
+  }
+  return valid;
+}
+
+void QUICK_SDB_INDEX_SORT_SELECT::add_used_key_part_to_set() {
+  QUICK_SELECT_I *quick = NULL;
+  List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
+
+  while ((quick= it++)) {
+    quick->add_used_key_part_to_set();
+  }
+}
+
+bool QUICK_SDB_INDEX_MERGE_SELECT::is_keys_used(const MY_BITMAP *fields) {
+  QUICK_SELECT_I *quick = NULL;
+  List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
+
+  while ((quick= ((QUICK_RANGE_SELECT*)it++))) {
+    if (is_key_used(head, quick->index, fields))
+      return 1;
+  }
+  return 0;
+}
+
+#ifndef DBUG_OFF
+void QUICK_SDB_INDEX_MERGE_SELECT::dbug_dump(int indent, bool verbose) {
+  QUICK_SELECT_I *quick = NULL;
+  List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
+
+  fprintf(DBUG_FILE, "%*squick sdb_index_merge select\n", indent, "");
+  fprintf(DBUG_FILE, "%*smerged scans {\n", indent, "");
+  while ((quick= it++)) {
+    quick->dbug_dump(indent+2, verbose);
+  }
+  fprintf(DBUG_FILE, "%*s}\n", indent, "");
+}
+#endif
+
+void QUICK_SDB_INDEX_MERGE_SELECT::add_keys_and_lengths(String *key_names, String *used_lengths) {
+  bool first= TRUE;
+  size_t length = 0;
+  char buf[64] = {0};
+  QUICK_RANGE_SELECT *quick = NULL;
+  List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
+
+  while ((quick= ((QUICK_RANGE_SELECT*)it++))) {
+    if (first) {
+      first= FALSE;
+    } else {
+      key_names->append(',');
+      used_lengths->append(',');
+    }
+
+    KEY *key_info= head->key_info + quick->index;
+    key_names->append(key_info->name);
+    length= longlong2str(quick->max_used_key_length, buf, 10) - buf;
+    used_lengths->append(buf, length);
+  }
+}
+
+Explain_quick_select *QUICK_SDB_INDEX_MERGE_SELECT::get_explain(MEM_ROOT *alloc) {
+  Explain_sdb_quick_select *res = NULL;
+  QUICK_RANGE_SELECT *quick = NULL;
+  Explain_quick_select *child_explain = NULL;
+  List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
+
+  if (!(res= new (alloc) Explain_sdb_quick_select(get_type()))) {
+    return NULL;
+  }
+
+  while ((quick= ((QUICK_RANGE_SELECT *)it++))) {
+    if ((child_explain= quick->get_explain(alloc))) {
+      res->children.push_back(child_explain);
+    } else {
+      return NULL;
+    }
+  }
+
+  return res;
+}
+
+int  QUICK_SDB_ROR_UNION_SELECT::reset(void) {
+  DBUG_ENTER("QUICK_ROR_UNION_SELECT::reset");
+
+  int rc = 0;
+
+  if (!scans_inited) {
+    QUICK_SELECT_I *quick = NULL;
+    List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
+    while ((quick = it++)) {
+      if(QS_TYPE_ROR_INTERSECT == quick->get_type()) {
+        THD *thd= quick->head->in_use;
+        MEM_ROOT *saved_root= thd->mem_root;
+        thd->mem_root= &alloc;
+        rc= quick->init_ror_merged_scan(false, &alloc);
+        thd->mem_root= saved_root;
+        if (rc) {
+          DBUG_RETURN(1);
+        }
+      }
+    }
+    scans_inited= true;
+  }
+
+  if (head->file->inited && (rc= head->file->ha_rnd_end())) {
+    DBUG_PRINT("rc", ("ROR index_merge rnd_end call failed"));
+    DBUG_RETURN(rc);
+  }
+
+  if ((rc= head->file->ha_rnd_init(false))) {
+    DBUG_PRINT("rc", ("ROR index_merge rnd_init call failed"));
+    DBUG_RETURN(rc);
+  }
+
+  DBUG_RETURN(QUICK_SDB_INDEX_SORT_SELECT::reset());
+}
+
+#ifndef DBUG_OFF
+void QUICK_SDB_ROR_UNION_SELECT::dbug_dump(int indent, bool verbose) {
+  List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
+  QUICK_SELECT_I *quick;
+
+  fprintf(DBUG_FILE, "%*squick SDB-ROR-union select\n", indent, "");
+  fprintf(DBUG_FILE, "%*smerged scans {\n", indent, "");
+  while ((quick= it++)) {
+    quick->dbug_dump(indent+2, verbose);
+  }
+  fprintf(DBUG_FILE, "%*s}\n", indent, "");
+}
+#endif
+
+void QUICK_SDB_ROR_UNION_SELECT::add_keys_and_lengths(String *key_names, String *used_lengths) {
+  bool first= TRUE;
+  QUICK_SELECT_I *quick = NULL;
+  List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
+
+  while ((quick= it++)) {
+    if (first) {
+      first= FALSE;
+    } else {
+      used_lengths->append(',');
+      key_names->append(',');
+    }
+    quick->add_keys_and_lengths(key_names, used_lengths);
+  }
+}
+
+bool QUICK_SDB_ROR_UNION_SELECT::is_keys_used(const MY_BITMAP *fields) {
+  QUICK_SELECT_I *quick = NULL;
+  List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
+
+  while ((quick= it++)) {
+    if (quick->is_keys_used(fields))
+      return 1;
+  }
+  return 0;
+}
+
+Explain_quick_select *QUICK_SDB_ROR_UNION_SELECT::get_explain(MEM_ROOT *alloc) {
+  Explain_sdb_quick_select *res = NULL;
+  QUICK_RANGE_SELECT *quick = NULL;
+  Explain_quick_select *child_explain = NULL;
+  List_iterator_fast<QUICK_SELECT_I> it(quick_selects);
+
+  if (!(res= new (alloc) Explain_sdb_quick_select(get_type()))) {
+    return NULL;
+  }
+
+  while ((quick= ((QUICK_RANGE_SELECT *)it++))) {
+    if ((child_explain= quick->get_explain(alloc))) {
+      res->children.push_back(child_explain);
+    } else {
+      return NULL;
+    }
+  }
+
+  return res;
+}
+

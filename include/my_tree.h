@@ -86,6 +86,8 @@ int reset_tree(TREE*);
 	/* Functions on leafs */
 TREE_ELEMENT *tree_insert(TREE *tree,void *key, uint key_size, 
                           void *custom_arg);
+TREE_ELEMENT *tree_insert_with_info(TREE *tree,void *key, uint key_size, 
+                          void *custom_arg, int *is_dup);
 void *tree_search(TREE *tree, void *key, void *custom_arg);
 int tree_walk(TREE *tree,tree_walk_action action,
 	      void *argument, TREE_WALK visit);

@@ -2191,6 +2191,20 @@ void Explain_quick_select::print_key_len(String *str)
 }
 
 
+const char * Explain_sdb_quick_select::get_name_by_type()
+{
+  switch (quick_type) {
+    case QUICK_SELECT_I::QS_TYPE_INDEX_MERGE:
+      return "sdb_sort_union";
+    case QUICK_SELECT_I::QS_TYPE_ROR_UNION:
+      return "sdb_union";
+    default:
+      DBUG_ASSERT(0);
+      return "unknown quick select type";
+  }
+}
+
+
 int Explain_delete::print_explain(Explain_query *query, 
                                   select_result_sink *output,
                                   uint8 explain_flags,
