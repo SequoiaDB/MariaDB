@@ -109,6 +109,7 @@
 #endif
 
 #include "mariadb.h"
+#include "sql_base.h"
 #include "sql_priv.h"
 #include "key.h"        // is_key_used, key_copy, key_cmp, key_restore
 #include "sql_parse.h"                          // check_stack_overrun
@@ -12437,27 +12438,50 @@ int QUICK_RANGE_SELECT::get_next_prefix(uint prefix_length,
       DBUG_ASSERT(cur_prefix != NULL);
       result= file->ha_index_read_map(record, cur_prefix, keypart_map,
                                       HA_READ_AFTER_KEY);
-      if (result || last_range->max_keypart_map == 0) {
-        /*
-          Only return if actual failure occurred. For HA_ERR_KEY_NOT_FOUND
-          or HA_ERR_END_OF_FILE, we just want to continue to reach the next
-          set of ranges. It is possible for the storage engine to return
-          HA_ERR_KEY_NOT_FOUND/HA_ERR_END_OF_FILE even when there are more
-          keys if it respects the end range set by the read_range_first call
-          below.
-        */
-        if (result != HA_ERR_KEY_NOT_FOUND && result != HA_ERR_END_OF_FILE)
-          DBUG_RETURN(result);
-      } else {
-        /*
-          For storage engines that don't respect end range, check if we've
-          moved past the current range.
-        */
-        key_range previous_endpoint;
-        last_range->make_max_endpoint(&previous_endpoint, prefix_length,
-                                      keypart_map);
-        if (file->compare_key(&previous_endpoint) <= 0)
-          DBUG_RETURN(0);
+      /*
+        This is a quick fix. GROUP MIN MAX algorithm is to be refactored.
+        If it is SequoiaDB engine, since end_range of current range has been
+        pushed down, HA_ERR_KEY_NOT_FOUND doesn't mean end of file but end
+        of current range. If there are more ranges to read, we should read
+        the next.
+
+        Note: end_range only be pushed down for single column index. Multi
+        column index uses $Position to run, which has no end range.
+      */
+      bool hit_end_of_range = false;
+      if (head && is_sdb_engine_table(head) &&
+          HA_ERR_KEY_NOT_FOUND == result &&
+          index != MAX_KEY &&
+          1 == head->key_info[index].user_defined_key_parts &&
+          ranges.elements - (uint)(cur_range - (QUICK_RANGE**) ranges.buffer) > 0)
+      {
+        hit_end_of_range = true;
+      }
+
+      if (!hit_end_of_range)
+      {
+        if (result || last_range->max_keypart_map == 0) {
+          /*
+            Only return if actual failure occurred. For HA_ERR_KEY_NOT_FOUND
+            or HA_ERR_END_OF_FILE, we just want to continue to reach the next
+            set of ranges. It is possible for the storage engine to return
+            HA_ERR_KEY_NOT_FOUND/HA_ERR_END_OF_FILE even when there are more
+            keys if it respects the end range set by the read_range_first call
+            below.
+          */
+          if (result != HA_ERR_KEY_NOT_FOUND && result != HA_ERR_END_OF_FILE)
+            DBUG_RETURN(result);
+        } else {
+          /*
+            For storage engines that don't respect end range, check if we've
+            moved past the current range.
+          */
+          key_range previous_endpoint;
+          last_range->make_max_endpoint(&previous_endpoint, prefix_length,
+                                        keypart_map);
+          if (file->compare_key(&previous_endpoint) <= 0)
+            DBUG_RETURN(0);
+        }
       }
     }
 

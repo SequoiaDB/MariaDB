@@ -326,6 +326,8 @@ extern Item **not_found_item;
 extern Field *not_found_field;
 extern Field *view_ref_found;
 
+bool is_sdb_engine_table(TABLE *table);
+
 /**
   clean/setup table fields and map.
 

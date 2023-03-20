@@ -9410,3 +9410,14 @@ void promote_select_describe_flag_if_needed(LEX *lex)
 /**
   @} (end of group Data_Dictionary)
 */
+
+bool is_sdb_engine_table(TABLE *table) {
+  if (!table || !table->file || !table->file->ht)
+  {
+    return false;
+  }
+  const char *engine_name =
+      ha_resolve_storage_engine_name(table->file->partition_ht());
+
+  return (0 == strcmp("SequoiaDB", engine_name));
+}
