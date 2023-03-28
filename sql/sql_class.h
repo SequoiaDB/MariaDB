@@ -804,6 +804,7 @@ typedef struct system_variables
   vers_asof_timestamp_t vers_asof_timestamp;
   ulong vers_alter_history;
   my_bool sdb_sql_pushdown;
+  my_bool server_ha_retry_prepared_stmt;
 } SV;
 
 /**

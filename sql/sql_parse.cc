@@ -1619,6 +1619,73 @@ void retry_current_statement(THD *thd, Parser_state &parser_state,
   thd->is_result_set_started= FALSE;
 }
 
+void retry_prepared_stmt(THD *thd, char *packet_arg, uint packet_length,
+                         bool bulk_execute)
+{
+  bool cl_version_not_match_error= false;
+    // Check if it's collection version not match error
+  Diagnostics_area *da= thd->get_stmt_da();
+  if (thd->is_error() && da && (ER_GET_ERRNO == da->sql_errno())) {
+    const char *thd_err_msg= da->message();
+    static const char *CL_VERSION_ERR= "Got error 40357";
+    uint error_len= strlen(CL_VERSION_ERR);
+    // Handle "Got error 40357 from storage engine" error
+    if (thd_err_msg && 0 == strncmp(CL_VERSION_ERR, thd_err_msg, error_len)) {
+      cl_version_not_match_error= true;
+    }
+  }
+
+  // Retry prepared statement using binary protocol
+  uchar *packet= (uchar*)packet_arg;
+  ulong stmt_id= uint4korr(packet);
+  Statement *stmt= ((stmt_id == LAST_STMT_ID) ?
+                    thd->last_stmt :
+                    thd->stmt_map.find(stmt_id));
+  if (thd->variables.server_ha_retry_prepared_stmt &&
+      cl_version_not_match_error &&
+      stmt && stmt->type() == Query_arena::PREPARED_STATEMENT &&
+      stmt->lex && ha_is_open() && thd->is_error() &&
+      (!stmt->lex->sroutines_list.elements))
+  {
+    // Always use LEX in prepared statement to check if
+    // current stmt need to be retried
+    LEX *saved_lex= thd->lex;
+    const int MAX_RETRY_TIMES= thd->variables.server_ha_dml_max_retry_count;
+    int times= 0;
+    // If current statement contains routines, it will not be retried.
+    // Because before the statement is executed, 'server_ha' will wait
+    // objects contained in the statement to be updated(updated by
+    // replay thread) to its latest state.
+    bool need_retry= (!stmt->lex->sroutines_list.elements);
+    while (thd->is_error() && need_retry && times++ < MAX_RETRY_TIMES)
+    {
+      uint mysql_errno= thd->get_stmt_da()->sql_errno();
+      // Prepare retry flag for current statement. If retry flag is
+      // set, error in thd will be reset
+      thd->lex= stmt->lex;
+      mysql_audit_general(thd, 0, 0, "SetDMLRetryFlag");
+      thd->lex= saved_lex;
+      need_retry= (mysql_errno && !thd->get_stmt_da()->is_set());
+      if (need_retry)
+      {
+        if (bulk_execute)
+          mysqld_stmt_bulk_execute(thd, packet_arg, packet_length);
+        else
+          mysqld_stmt_execute(thd, packet_arg, packet_length);
+      }
+      // Reset retry flag
+      thd->lex= stmt->lex;
+      mysql_audit_general(thd, 0, 0, "ResetDMLRetryFlag");
+      thd->lex= saved_lex;
+    }
+    // Clear checked objects cache
+    thd->lex= stmt->lex;
+    mysql_audit_general(thd, 0, 0, "ResetCheckedObjects");
+    thd->lex= saved_lex;
+    thd->is_result_set_started= FALSE;
+  }
+}
+
 /**
   Perform one connection-level (COM_XXXX) command.
 
@@ -1867,7 +1934,16 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
   }
   case COM_STMT_BULK_EXECUTE:
   {
+    // Save packet, packet will be changed in 'mysqld_stmt_execute'
+    char *saved_pkg= (char*)thd_alloc(thd, packet_length);
+    uint saved_pkg_len= packet_length;
+    if (saved_pkg)
+      memcpy(saved_pkg, packet, packet_length);
+
     mysqld_stmt_bulk_execute(thd, packet, packet_length);
+
+    if (thd->is_error() && saved_pkg)
+      retry_prepared_stmt(thd, saved_pkg, saved_pkg_len, TRUE);
 #ifdef WITH_WSREP
     if (WSREP(thd))
     {
@@ -1878,7 +1954,16 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
   }
   case COM_STMT_EXECUTE:
   {
+    // Save packet, packet will be changed in 'mysqld_stmt_execute'
+    char *saved_pkg= (char*)thd_alloc(thd, packet_length);
+    uint saved_pkg_len= packet_length;
+    if (saved_pkg)
+      memcpy(saved_pkg, packet, packet_length);
+
     mysqld_stmt_execute(thd, packet, packet_length);
+
+    if (thd->is_error() && saved_pkg)
+      retry_prepared_stmt(thd, saved_pkg, saved_pkg_len, FALSE);
 #ifdef WITH_WSREP
     if (WSREP(thd))
     {
