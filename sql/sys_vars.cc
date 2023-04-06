@@ -6467,3 +6467,9 @@ static Sys_var_mybool Sys_upgrade_mrr_cost_model(
        HIDDEN SESSION_VAR(upgrade_mrr_cost_model),
        CMD_LINE(OPT_ARG), DEFAULT(TRUE));
 
+static Sys_var_mybool Sys_replace_const_sum_func_pushed_from_havin(
+       "optimizer_pushed_having_constant_substitution",
+       "constant substitution for pushed having condition",
+       HIDDEN SESSION_VAR(optimizer_pushed_having_constant_substitution),
+       CMD_LINE(OPT_ARG),
+       DEFAULT(TRUE));

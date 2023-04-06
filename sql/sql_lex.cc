@@ -10270,6 +10270,23 @@ Item *remove_pushed_top_conjuncts_for_having(THD *thd, Item *cond)
   return cond;
 }
 
+void st_select_lex::constant_substitution_for_pushed_having(THD *thd, Item *cond)
+{
+  Item* item = NULL;
+  if (cond->type() == Item::COND_ITEM)
+  {
+    List<Item> *arg_list=  ((Item_cond*) cond)->argument_list();
+    List_iterator<Item> li(*arg_list);
+    while ((item=li++))
+    {
+      constant_substitution_for_pushed_having(thd, item);
+    }
+  }
+  else if (cond->type() == Item::FUNC_ITEM)
+  {
+    cond->constant_substitution_for_pushed_having(thd);
+  }
+}
 
 /**
   @brief
@@ -10316,12 +10333,13 @@ Item *remove_pushed_top_conjuncts_for_having(THD *thd, Item *cond)
        If the extracted condition is an AND condition it is transformed into a
        list of all its conjuncts saved in attach_to_conds. Otherwise,
        the condition is put into attach_to_conds as the only its element.
-    4. Remove conditions from HAVING clause that can be entirely pushed
+    4. Constant substitution for pushed having condition
+    5. Remove conditions from HAVING clause that can be entirely pushed
        into WHERE.
        Multiple equalities are not removed but marked with DELETION_FL flag.
        They will be deleted later in substitite_for_best_equal_field() called
        for the HAVING condition.
-    5. Unwrap fields wrapped in Item_ref wrappers contained in the condition
+    6. Unwrap fields wrapped in Item_ref wrappers contained in the condition
        of attach_to_conds so the condition could be pushed into WHERE.
 
   @note
@@ -10370,7 +10388,19 @@ Item *st_select_lex::pushdown_from_having_into_where(THD *thd, Item *having)
     goto exit;
 
   /*
-    4. Remove conditions from HAVING clause that can be entirely pushed
+    4. Constant substitution for pushed having condition
+  */
+  if (thd->variables.optimizer_pushed_having_constant_substitution)
+  {
+    it.rewind();
+    while ((item=it++))
+    {
+      constant_substitution_for_pushed_having(thd, item);
+    }
+  }
+
+  /*
+    5. Remove conditions from HAVING clause that can be entirely pushed
        into WHERE.
        Multiple equalities are not removed but marked with DELETION_FL flag.
        They will be deleted later in substitite_for_best_equal_field() called
@@ -10412,7 +10442,7 @@ Item *st_select_lex::pushdown_from_having_into_where(THD *thd, Item *having)
     join->having_equal= 0;
 
   /*
-    5. Unwrap fields wrapped in Item_ref wrappers contained in the condition
+    6. Unwrap fields wrapped in Item_ref wrappers contained in the condition
        of attach_to_conds so the condition could be pushed into WHERE.
   */
   it.rewind();

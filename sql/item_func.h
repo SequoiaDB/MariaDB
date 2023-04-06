@@ -347,6 +347,11 @@ public:
     return Item_args::excl_dep_on_grouping_fields(sel);
   }
 
+  void constant_substitution_for_pushed_having(THD *thd)
+  {
+    return Item_args::constant_substitution_for_pushed_having(thd);
+  }
+
   bool excl_dep_on_in_subq_left_part(Item_in_subselect *subq_pred)
   {
     return Item_args::excl_dep_on_in_subq_left_part(subq_pred);

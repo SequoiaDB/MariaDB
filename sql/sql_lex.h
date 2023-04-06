@@ -1543,6 +1543,7 @@ public:
                                        Item **remaining_cond,
                                        Item_transformer transformer,
                                        uchar *arg);
+  void constant_substitution_for_pushed_having(THD *thd, Item *cond);
   Item *pushdown_from_having_into_where(THD *thd, Item *having);
 
   select_handler *find_select_handler(THD *thd);

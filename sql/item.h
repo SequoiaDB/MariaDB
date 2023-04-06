@@ -1985,6 +1985,16 @@ public:
   */
   virtual bool excl_dep_on_grouping_fields(st_select_lex *sel)
   { return false; }
+  /* 
+    If the item of pushed having conds is always true or false, substituted
+    by basic const item.
+  */
+  /* purecov: begin inspected */
+  virtual void constant_substitution_for_pushed_having(THD *thd)
+  { return; }
+  /* purecov: end */
+  /* true if the item is always false. */
+  virtual bool is_always_false() { return false; }
   /*
     TRUE if the expression depends only on fields from the left part of
     IN subquery or can be converted to such an expression using equalities.
@@ -2618,6 +2628,7 @@ protected:
     return true;
   }
   bool excl_dep_on_grouping_fields(st_select_lex *sel);
+  void constant_substitution_for_pushed_having(THD *thd);
   bool eq(const Item_args *other, bool binary_cmp) const
   {
     for (uint i= 0; i < arg_count ; i++)

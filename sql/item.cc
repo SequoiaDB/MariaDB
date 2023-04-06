@@ -9347,7 +9347,8 @@ bool Item_args::excl_dep_on_grouping_fields(st_select_lex *sel)
     if (args[i]->type() == Item::FUNC_ITEM &&
         ((Item_func *)args[i])->functype() == Item_func::UDF_FUNC)
       return false;
-    if (args[i]->const_item())
+    if (args[i]->basic_const_item() || (args[i]->const_item() &&
+        args[i]->is_always_false()))
       continue;
     if (!args[i]->excl_dep_on_grouping_fields(sel))
       return false;
@@ -9355,6 +9356,17 @@ bool Item_args::excl_dep_on_grouping_fields(st_select_lex *sel)
   return true;
 }
 
+void Item_args::constant_substitution_for_pushed_having(THD *thd)
+{
+  for (uint i= 0; i < arg_count; i++)
+  {
+    if (args[i]->const_item() && args[i]->is_always_false())
+    {
+      // always false
+      args[i] = new (thd->mem_root) Item_int(thd, (longlong)0);
+    }
+  }
+}
 
 double Item_direct_view_ref::val_result()
 {

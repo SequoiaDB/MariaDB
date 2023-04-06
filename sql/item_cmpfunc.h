@@ -2561,6 +2561,14 @@ public:
   const char *func_name() const { return "isnull"; }
   void print(String *str, enum_query_type query_type);
   enum precedence precedence() const { return CMP_PRECEDENCE; }
+  bool is_always_false()
+  { 
+    if (!maybe_null)
+    {
+      return true;
+    }
+    return false;
+  }
 
   bool arg_is_datetime_notnull_field()
   {
