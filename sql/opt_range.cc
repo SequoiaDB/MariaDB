@@ -1572,7 +1572,7 @@ end:
   head->column_bitmaps_set(save_read_set, save_write_set);
   
   //TODO: The optimization of 'keyread' is not required for SequoiaDB
-  if(0 == strcmp("SequoiaDB", ha_resolve_storage_engine_name(head->file->ht))) {
+  if(is_sdb_engine_table(head)) {
     bitmap_copy(&column_bitmap, head->read_set);
   }
 
@@ -7563,7 +7563,7 @@ QUICK_SELECT_I *TRP_INDEX_MERGE::make_quick(PARAM *param,
   QUICK_SELECT_I *quick_imerge = NULL;
   
   /* index_merge always retrieves full rows, ignore retrieve_full_rows */
-  if(0 == strcmp("SequoiaDB", ha_resolve_storage_engine_name(param->table->file->ht))) {
+  if(is_sdb_engine_table(param->table)) {
     QUICK_SDB_INDEX_MERGE_SELECT *sdb_quick_imerge = NULL;
     sdb_quick_imerge = new QUICK_SDB_INDEX_MERGE_SELECT(param->thd, param->table);
     if (!sdb_quick_imerge) {
@@ -7701,7 +7701,7 @@ QUICK_SELECT_I *TRP_ROR_UNION::make_quick(PARAM *param,
     It is impossible to construct a ROR-union that will not retrieve full
     rows, ignore retrieve_full_rows parameter.
   */
-  if(0 == strcmp("SequoiaDB", ha_resolve_storage_engine_name(param->table->file->ht))) {
+  if(is_sdb_engine_table(param->table)) {
     QUICK_SDB_ROR_UNION_SELECT *sdb_quick_roru = NULL;
     sdb_quick_roru = new QUICK_SDB_ROR_UNION_SELECT(param->thd, param->table);
     if (!sdb_quick_roru) {
