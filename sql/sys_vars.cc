@@ -6409,8 +6409,15 @@ static Sys_var_enum Sys_secure_timestamp(
        READ_ONLY GLOBAL_VAR(opt_secure_timestamp), CMD_LINE(REQUIRED_ARG),
        secure_timestamp_levels, DEFAULT(SECTIME_NO));
 
+/* Used with --help --verbose to show the hidden variables */
+static Sys_var_mybool Sys_full(
+       "full", NULL,
+       PARSED_EARLY HIDDEN GLOBAL_VAR(opt_full),
+       CMD_LINE(OPT_ARG), DEFAULT(FALSE));
+
 static Sys_var_uint Sys_server_ha_dml_max_retry_count(
        "server_ha_dml_max_retry_count",
+       "SEQUOIASQLMAINSTREAM-1501 "
        "The maximum number of retries required for current DML.",
        HIDDEN SESSION_VAR(server_ha_dml_max_retry_count),
        CMD_LINE(OPT_ARG), VALID_RANGE(0, 100),
@@ -6433,12 +6440,14 @@ static Sys_var_mybool Sys_sequoiadb_push_down_join(
 
 static Sys_var_mybool Sys_server_ha_retry_prepared_stmt(
        "server_ha_retry_prepared_stmt",
-       "Whether to re-execute DML statement using binary protocol",
+       "SEQUOIASQLMAINSTREAM-1634 "
+       "Whether to re-execute DML statement using binary protocol.",
        HIDDEN SESSION_VAR(server_ha_retry_prepared_stmt),
        CMD_LINE(OPT_ARG), DEFAULT(TRUE));
 
 static Sys_var_mybool Sys_reject_nested_func_for_group_min_max(
        "reject_nested_func_for_group_min_max",
+       "SEQUOIASQLMAINSTREAM-1816 "
        "If there are nested function for min/max field in where clause, "
        "never choose group min max access plan.",
        HIDDEN SESSION_VAR(reject_nested_func_for_group_min_max),

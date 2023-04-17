@@ -175,7 +175,7 @@ sys_var::sys_var(sys_var_chain *chain, const char *name_arg,
   bzero(&option, sizeof(option));
   option.name= name_arg;
   option.id= getopt_id;
-  option.comment= (flags & HIDDEN) ? NULL : comment;
+  option.comment= comment;
   option.arg_type= getopt_arg_type;
   option.value= (uchar **)global_var_ptr();
   option.def_value= def_val;
@@ -418,7 +418,6 @@ double sys_var::val_real(bool *is_null,
   return ret;
 }
 
-
 void sys_var::do_deprecated_warning(THD *thd)
 {
   if (deprecation_substitute != NULL)
@@ -656,7 +655,7 @@ SHOW_VAR* enumerate_sys_vars(THD *thd, bool sorted, enum enum_var_type scope)
         continue;
 
       // don't show the hidden inner variables
-      if (var->is_hidden())
+      if (var->is_hidden() && !opt_full)
       {
         continue;
       }

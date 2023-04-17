@@ -196,6 +196,17 @@ public:
       if ((flags & PARSE_EARLY) != parse_flags)
         return 0;
     }
+
+    /*
+      We delay the initialization of option.comment, because opt_full is
+      unknown at the time of sys_var::sys_var().
+    */
+    if (option.comment && (flags & HIDDEN) && !opt_full)
+    {
+      assert((parse_flags & PARSE_EARLY) == 0);
+      option.comment = NULL;
+    }
+
     return insert_dynamic(array, (uchar*)&option);
   }
   void do_deprecated_warning(THD *thd);

@@ -3966,7 +3966,8 @@ static int construct_options(MEM_ROOT *mem_root, struct st_plugin_int *tmp,
     convert_underscore_to_dash(optname, optnamelen);
 
     options->name= optname;
-    options->comment= (opt->flags & PLUGIN_VAR_HIDDEN) ? NULL : opt->comment;
+    options->comment=
+        ((opt->flags & PLUGIN_VAR_HIDDEN) && !opt_full) ? NULL : opt->comment;
     options->app_type= (opt->flags & PLUGIN_VAR_NOSYSVAR) ? NULL : opt;
     options->id= 0;
 
