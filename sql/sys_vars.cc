@@ -6436,3 +6436,11 @@ static Sys_var_mybool Sys_server_ha_retry_prepared_stmt(
        "Whether to re-execute DML statement using binary protocol",
        HIDDEN SESSION_VAR(server_ha_retry_prepared_stmt),
        CMD_LINE(OPT_ARG), DEFAULT(TRUE));
+
+static Sys_var_mybool Sys_reject_nested_func_for_group_min_max(
+       "reject_nested_func_for_group_min_max",
+       "If there are nested function for min/max field in where clause, "
+       "never choose group min max access plan.",
+       HIDDEN SESSION_VAR(reject_nested_func_for_group_min_max),
+       CMD_LINE(OPT_ARG), DEFAULT(TRUE));
+

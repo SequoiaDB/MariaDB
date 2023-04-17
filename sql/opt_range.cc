@@ -14136,6 +14136,10 @@ check_group_min_max_predicates(Item *cond, Item_field *min_max_arg_item,
     }
     else if (cur_arg->type() == Item::FUNC_ITEM)
     {
+      // Fix SEQUOIASQLMAINSTREAM-1816
+      if (current_thd->variables.reject_nested_func_for_group_min_max)
+        DBUG_RETURN(FALSE);
+
       if (!check_group_min_max_predicates(cur_arg, min_max_arg_item, image_type,
                                           &has_min_max, &has_other))
         DBUG_RETURN(FALSE);
