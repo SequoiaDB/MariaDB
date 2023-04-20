@@ -8931,7 +8931,7 @@ void add_user_parameters(String *result, const LEX_USER *combo) {
   result->append(combo->user.str);
   result->append('\'');
   result->append(STRING_WITH_LEN("@'"));
-  result->append(new_acl_user.host.hostname, new_acl_user.hostname_length,
+  result->append(new_acl_user.host.hostname, strlen(new_acl_user.host.hostname),
                  system_charset_info);
   result->append('\'');
 
@@ -8953,7 +8953,8 @@ void add_user_parameters(String *result, const LEX_USER *combo) {
   }
   else
   {
-    result->append(STRING_WITH_LEN(" IDENTIFIED VIA "));
+    if (new_acl_user.nauth)
+      result->append(STRING_WITH_LEN(" IDENTIFIED VIA "));
     for (uint i=0; i < new_acl_user.nauth; i++)
     {
       if (i)
