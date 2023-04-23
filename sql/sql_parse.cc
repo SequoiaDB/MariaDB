@@ -1641,11 +1641,20 @@ void retry_prepared_stmt(THD *thd, char *packet_arg, uint packet_length,
   Statement *stmt= ((stmt_id == LAST_STMT_ID) ?
                     thd->last_stmt :
                     thd->stmt_map.find(stmt_id));
+  char *tmp_pkg= (char*)thd_alloc(thd, packet_length);
+  if (tmp_pkg)
+    memcpy(tmp_pkg, packet_arg, packet_length);
+  else
+  {
+    sql_print_error("Out of memory"); /* purecov: inspected */
+    goto error; /* purecov: inspected */
+  }
+
   if (thd->variables.server_ha_retry_prepared_stmt &&
       cl_version_not_match_error &&
       stmt && stmt->type() == Query_arena::PREPARED_STATEMENT &&
       stmt->lex && ha_is_open() && thd->is_error() &&
-      (!stmt->lex->sroutines_list.elements))
+      (!stmt->lex->sroutines_list.elements) && tmp_pkg)
   {
     // Always use LEX in prepared statement to check if
     // current stmt need to be retried
@@ -1668,10 +1677,11 @@ void retry_prepared_stmt(THD *thd, char *packet_arg, uint packet_length,
       need_retry= (mysql_errno && !thd->get_stmt_da()->is_set());
       if (need_retry)
       {
+        memcpy(tmp_pkg, packet_arg, packet_length);
         if (bulk_execute)
-          mysqld_stmt_bulk_execute(thd, packet_arg, packet_length);
+          mysqld_stmt_bulk_execute(thd, tmp_pkg, packet_length);
         else
-          mysqld_stmt_execute(thd, packet_arg, packet_length);
+          mysqld_stmt_execute(thd, tmp_pkg, packet_length);
       }
       // Reset retry flag
       thd->lex= stmt->lex;
@@ -1684,6 +1694,10 @@ void retry_prepared_stmt(THD *thd, char *packet_arg, uint packet_length,
     thd->lex= saved_lex;
     thd->is_result_set_started= FALSE;
   }
+done:
+  return ;
+error:
+  goto done;
 }
 
 /**
@@ -1936,14 +1950,16 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
   {
     // Save packet, packet will be changed in 'mysqld_stmt_execute'
     char *saved_pkg= (char*)thd_alloc(thd, packet_length);
-    uint saved_pkg_len= packet_length;
-    if (saved_pkg)
-      memcpy(saved_pkg, packet, packet_length);
-
+    if (NULL == saved_pkg)
+    {
+      my_error(ER_OUT_OF_RESOURCES, MYF(0)); /* purecov: inspected */
+      break; /* purecov: inspected */
+    }
+    memcpy(saved_pkg, packet, packet_length);
     mysqld_stmt_bulk_execute(thd, packet, packet_length);
 
-    if (thd->is_error() && saved_pkg)
-      retry_prepared_stmt(thd, saved_pkg, saved_pkg_len, TRUE);
+    if (thd->is_error())
+      retry_prepared_stmt(thd, saved_pkg, packet_length, TRUE);
 #ifdef WITH_WSREP
     if (WSREP(thd))
     {
@@ -1956,14 +1972,16 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
   {
     // Save packet, packet will be changed in 'mysqld_stmt_execute'
     char *saved_pkg= (char*)thd_alloc(thd, packet_length);
-    uint saved_pkg_len= packet_length;
-    if (saved_pkg)
-      memcpy(saved_pkg, packet, packet_length);
-
+    if (NULL == saved_pkg)
+    {
+      my_error(ER_OUT_OF_RESOURCES, MYF(0)); /* purecov: inspected */
+      break; /* purecov: inspected */
+    }
+    memcpy(saved_pkg, packet, packet_length);
     mysqld_stmt_execute(thd, packet, packet_length);
 
-    if (thd->is_error() && saved_pkg)
-      retry_prepared_stmt(thd, saved_pkg, saved_pkg_len, FALSE);
+    if (thd->is_error())
+      retry_prepared_stmt(thd, saved_pkg, packet_length, FALSE);
 #ifdef WITH_WSREP
     if (WSREP(thd))
     {
