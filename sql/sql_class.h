@@ -1124,6 +1124,13 @@ public:
   { return strdup_root(mem_root,str); }
   inline char *strmake(const char *str, size_t size)
   { return strmake_root(mem_root,str,size); }
+  inline LEX_CSTRING strmake(LEX_CSTRING str)
+  {
+    LEX_CSTRING ret;
+    ret.str= strmake(str.str, str.length);
+    ret.length= ret.str ? str.length : 0;
+    return ret;
+  }
   inline void *memdup(const void *str, size_t size)
   { return memdup_root(mem_root,str,size); }
   inline void *memdup_w_gap(const void *str, size_t size, size_t gap)
@@ -5169,6 +5176,7 @@ public:
      be ignored but the real result of join exec. */
   sdb_sql_push_down_exec_steps sdb_sql_exec_step;
   bool is_result_set_started;
+  List<Send_field> sent_fields;
 };
 
 /** A short cut for thd->get_stmt_da()->set_ok_status(). */

@@ -1617,6 +1617,7 @@ void retry_current_statement(THD *thd, Parser_state &parser_state,
     mysql_audit_general(thd, 0, 0, "ResetCheckedObjects");
   }
   thd->is_result_set_started= FALSE;
+  thd->sent_fields.empty();
 }
 
 void retry_prepared_stmt(THD *thd, char *packet_arg, uint packet_length,
@@ -1693,6 +1694,7 @@ void retry_prepared_stmt(THD *thd, char *packet_arg, uint packet_length,
     mysql_audit_general(thd, 0, 0, "ResetCheckedObjects");
     thd->lex= saved_lex;
     thd->is_result_set_started= FALSE;
+    thd->sent_fields.empty();
   }
 done:
   return ;

@@ -1503,6 +1503,7 @@ sp_head::execute(THD *thd, bool merge_da_on_success)
       mysql_audit_general(thd, 0, 0, "ResetDMLRetryFlag");
     }
     thd->is_result_set_started= FALSE;
+    thd->sent_fields.empty();
   } while (!err_status && likely(!thd->killed) &&
            likely(!thd->is_fatal_error) &&
            !thd->spcont->pause_state);

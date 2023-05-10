@@ -86,6 +86,8 @@ char empty_c_string[1]= {0};    /* used for not defined db */
 
 const char * const THD::DEFAULT_WHERE= "field list";
 
+extern bool ha_is_open();
+
 /****************************************************************************
 ** User variables
 ****************************************************************************/
@@ -3061,13 +3063,77 @@ bool select_send::send_result_set_metadata(List<Item> &list, uint flags)
 #endif /* WITH_WSREP */
   
   // do not send send_result_metadata once again for DML
-  if (thd->is_result_set_started)
+  if (thd->is_result_set_started && ha_is_open())
+  {
+    // Check if sent schema match
+    List_iterator_fast<Send_field> sent_field_it(thd->sent_fields);
+    List_iterator_fast<Item> it(list);
+    Item *item= NULL;
+    Send_field *sent_field= NULL;
+
+    if (list.elements != thd->sent_fields.elements)
+    {
+      my_printf_error(HA_ERR_INTERNAL_ERROR,
+        "Unable to re-execute current query; schema is changed", MYF(0));
+      return TRUE;
+    }
+
+    do {
+      item= it++;
+      sent_field= sent_field_it++;
+      if (NULL == sent_field || NULL == item)
+        break;
+
+      // Build temporary Send_field according to Item
+      Send_field tmp_field;
+      item->make_send_field(thd, &tmp_field);
+
+      if (0 != strcmp(sent_field->col_name.str, tmp_field.col_name.str) ||
+          sent_field->type_handler()->field_type() !=
+            tmp_field.type_handler()->field_type() ||
+          sent_field->flags != tmp_field.flags ||
+          sent_field->decimals != tmp_field.decimals ||
+          sent_field->length != tmp_field.length)
+        break;
+    } while (item && sent_field);
+
+    if (item || sent_field)
+    {
+      my_printf_error(HA_ERR_INTERNAL_ERROR,
+        "Unable to re-execute current query; schema is changed", MYF(0));
+      return TRUE;
+    }
     return FALSE;
+  }
   
   if (!(res= thd->protocol->send_result_set_metadata(&list, flags)))
     is_result_set_started= 1;
 
   thd->is_result_set_started= is_result_set_started;
+  if (thd->is_result_set_started && ha_is_open())
+  {
+    // Save sent schema
+    List_iterator_fast<Item> it(list);
+    Item *item= NULL;
+    while ((item= it++))
+    {
+      Send_field *field= (Send_field*) thd_alloc(thd, sizeof(Send_field));
+      if (NULL == field)
+      {
+        my_error(ER_OUT_OF_RESOURCES, MYF(0)); /* purecov: inspected */
+        return TRUE; /* purecov: inspected */
+      }
+
+      item->make_send_field(thd, field);
+      // Make a copy for 'col_name'
+      field->col_name= thd->strmake(field->col_name);
+      if (thd->sent_fields.push_back(field) || NULL == field->col_name.str)
+      {
+        my_error(ER_OUT_OF_RESOURCES, MYF(0)); /* purecov: inspected */
+        return TRUE; /* purecov: inspected */
+      }
+    }
+  }
   return res;
 }
 
