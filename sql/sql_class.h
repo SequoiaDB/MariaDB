@@ -807,6 +807,7 @@ typedef struct system_variables
   my_bool server_ha_retry_prepared_stmt;
   my_bool reject_nested_func_for_group_min_max;
   my_bool i_s_tables_stats_cache_first;
+  my_bool upgrade_mrr_cost_model;
 } SV;
 
 /**

@@ -6460,3 +6460,10 @@ static Sys_var_mybool Sys_information_schema_tables_stats_cache_first(
        SESSION_VAR(i_s_tables_stats_cache_first), CMD_LINE(OPT_ARG),
        DEFAULT(FALSE));
 
+static Sys_var_mybool Sys_upgrade_mrr_cost_model(
+       "upgrade_mrr_cost_model",
+       "SEQUOIASQLMAINSTREAM-1880 "
+       "Upgrade the cost model for MRR.",
+       HIDDEN SESSION_VAR(upgrade_mrr_cost_model),
+       CMD_LINE(OPT_ARG), DEFAULT(TRUE));
+

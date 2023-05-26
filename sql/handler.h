@@ -4557,6 +4557,16 @@ private:
 private:
   void mark_trx_read_write_internal();
   bool check_table_binlog_row_based_internal(bool binlog_row);
+  ha_rows multi_range_read_info_const_v1(uint keyno, RANGE_SEQ_IF *seq,
+                                         void *seq_init_param, 
+                                         uint n_ranges, uint *bufsz,
+                                         uint *mrr_mode,
+                                         Cost_estimate *cost);
+  ha_rows multi_range_read_info_const_v2(uint keyno, RANGE_SEQ_IF *seq,
+                                         void *seq_init_param, 
+                                         uint n_ranges, uint *bufsz,
+                                         uint *mrr_mode,
+                                         Cost_estimate *cost);
 
 protected:
   /*
