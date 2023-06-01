@@ -3851,7 +3851,7 @@ static char *alloc_query_str(size_t size)
   return query;
 }
 
-static void dump_table(char *table, char *db);
+static void dump_table(const char *table, const char *db, const uchar *hash_key, size_t len);
 static my_bool dump_table_or_sequence(char *table, char *db, const char *type)
 {
   const char *table_type = NULL;
@@ -3882,7 +3882,7 @@ static my_bool dump_table_or_sequence(char *table, char *db, const char *type)
   if (strcmp(table_type, type) == 0)
   {
     match = TRUE;
-    dump_table(table, db);
+    dump_table(table, db, NULL, 0);
   }
   DBUG_RETURN(match);
 }
