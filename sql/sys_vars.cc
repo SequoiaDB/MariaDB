@@ -6453,3 +6453,10 @@ static Sys_var_mybool Sys_reject_nested_func_for_group_min_max(
        HIDDEN SESSION_VAR(reject_nested_func_for_group_min_max),
        CMD_LINE(OPT_ARG), DEFAULT(TRUE));
 
+static Sys_var_mybool Sys_information_schema_tables_stats_cache_first(
+       "information_schema_tables_stats_cache_first",
+       "Prioritizes cached table statistics over direct stats collecting for "
+       "SequiaDB engine tables when querying information_schema.tables.",
+       SESSION_VAR(i_s_tables_stats_cache_first), CMD_LINE(OPT_ARG),
+       DEFAULT(FALSE));
+
