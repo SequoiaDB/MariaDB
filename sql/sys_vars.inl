@@ -60,6 +60,7 @@
 #define PREALLOCATED sys_var::ALLOCATED+
 #define PARSED_EARLY sys_var::PARSE_EARLY+
 #define NO_SET_STMT sys_var::NO_SET_STATEMENT+
+#define HIDDEN sys_var::HIDDEN+
 
 /*
   Sys_var_bit meaning is reversed, like in
@@ -2749,3 +2750,4 @@ public:
   virtual const uchar *global_value_ptr(THD *thd, const LEX_CSTRING *base) const
   { return value_ptr(thd, global_var(vers_asof_timestamp_t)); }
 };
+
