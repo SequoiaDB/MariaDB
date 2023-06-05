@@ -1088,6 +1088,11 @@ int fill_sysvars(THD *thd, TABLE_LIST *tables, COND *cond)
   {
     sys_var *var= (sys_var*) my_hash_element(&system_variable_hash, i);
 
+    if (var->is_hidden())
+    {
+      continue;
+    }
+
     strmake_buf(name_buffer, var->name.str);
     my_caseup_str(system_charset_info, name_buffer);
 
