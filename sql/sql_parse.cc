@@ -1828,10 +1828,16 @@ bool dispatch_command(enum enum_server_command command, THD *thd,
     goto dispatch_end;
   }
 
+  // Reset is_result_set_started and sent_fields in THD before query
   if (thd->is_result_set_started)
   {
     thd->is_result_set_started= false;
   }
+  if (thd->sent_fields.elements)
+  {
+    thd->sent_fields.empty();
+  }
+
   switch (command) {
   case COM_INIT_DB:
   {
@@ -2782,6 +2788,16 @@ dispatch_end:
     do_end_of_statement= true;
 
 #endif /* WITH_WSREP */
+
+  // Reset is_result_set_started and sent_fields in THD
+  if (thd->is_result_set_started)
+  {
+    thd->is_result_set_started= false;
+  }
+  if (thd->sent_fields.elements)
+  {
+    thd->sent_fields.empty();
+  }
 
   if (do_end_of_statement)
   {
