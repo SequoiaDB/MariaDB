@@ -3416,7 +3416,6 @@ sp_lex_keeper::reset_lex_and_exec_core(THD *thd, uint *nextp,
     We should not save old value since it is saved/restored in
     sp_head::execute() when we are entering/leaving routine.
   */
-  LEX *lex_saved = thd->lex;
   thd->lex= m_lex;
 
   thd->set_query_id(next_query_id());
@@ -3575,8 +3574,6 @@ sp_lex_keeper::reset_lex_and_exec_core(THD *thd, uint *nextp,
     cleanup_items() is called in sp_head::execute()
   */
   thd->lex->restore_set_statement_var();
-  /* Restore original lex. */
-  thd->lex= lex_saved;
   DBUG_RETURN(res || thd->is_error());
 }
 
