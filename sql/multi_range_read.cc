@@ -76,20 +76,20 @@ handler::multi_range_read_info_const(uint keyno, RANGE_SEQ_IF *seq,
   // Here keep the old version implementation to prevent performance degradation
   if (ha_thd()->variables.upgrade_mrr_cost_model)
   {
-    return multi_range_read_info_const_v2(keyno, seq, seq_init_param,
-                                          n_ranges_arg, bufsz, flags, cost);
+    return multi_range_read_info_const_ver2(keyno, seq, seq_init_param,
+                                            n_ranges_arg, bufsz, flags, cost);
   }
   else
   {
-    return multi_range_read_info_const_v1(keyno, seq, seq_init_param,
-                                          n_ranges_arg, bufsz, flags, cost);
+    return multi_range_read_info_const_ver1(keyno, seq, seq_init_param,
+                                            n_ranges_arg, bufsz, flags, cost);
   }
 }
 
 ha_rows 
-handler::multi_range_read_info_const_v1(uint keyno, RANGE_SEQ_IF *seq,
-                                        void *seq_init_param, uint n_ranges_arg,
-                                        uint *bufsz, uint *flags, Cost_estimate *cost)
+handler::multi_range_read_info_const_ver1(uint keyno, RANGE_SEQ_IF *seq,
+                                          void *seq_init_param, uint n_ranges_arg,
+                                          uint *bufsz, uint *flags, Cost_estimate *cost)
 {
   KEY_MULTI_RANGE range;
   key_range prev_start_key;
@@ -235,9 +235,9 @@ handler::multi_range_read_info_const_v1(uint keyno, RANGE_SEQ_IF *seq,
 }
 
 ha_rows 
-handler::multi_range_read_info_const_v2(uint keyno, RANGE_SEQ_IF *seq,
-                                        void *seq_init_param, uint n_ranges_arg,
-                                        uint *bufsz, uint *flags, Cost_estimate *cost)
+handler::multi_range_read_info_const_ver2(uint keyno, RANGE_SEQ_IF *seq,
+                                          void *seq_init_param, uint n_ranges_arg,
+                                          uint *bufsz, uint *flags, Cost_estimate *cost)
 {
   KEY_MULTI_RANGE range;
   range_seq_t seq_it;
@@ -245,7 +245,7 @@ handler::multi_range_read_info_const_v2(uint keyno, RANGE_SEQ_IF *seq,
   uint n_ranges=0;
   uint n_eq_ranges= 0;
   ulonglong total_touched_blocks= 0;
-  ha_rows max_rows= stats.records;
+  ha_rows max_rows= MY_MAX(stats.records, 1); // Avoid 0, which means impossible
   THD *thd= table->in_use;
   uint limit= thd->variables.eq_range_index_dive_limit;
   bool use_statistics_for_eq_range= eq_ranges_exceeds_limit(seq,
