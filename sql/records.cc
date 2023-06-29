@@ -308,7 +308,12 @@ bool init_read_record(READ_RECORD *info,THD *thd, TABLE *table,
       select && select->cond && 
       (select->cond->used_tables() & table->map) &&
       !table->file->pushed_cond)
-    table->file->cond_push(select->cond);
+  {
+    if (!table->file->cond_push(select->cond))
+    {
+      table->file->pushed_cond= select->cond;
+    }
+  }
 
   DBUG_RETURN(0);
 } /* init_read_record */
