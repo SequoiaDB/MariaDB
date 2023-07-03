@@ -6440,7 +6440,7 @@ static Sys_var_mybool Sys_sequoiadb_push_down_join(
 
 static Sys_var_mybool Sys_server_ha_retry_prepared_stmt(
        "server_ha_retry_prepared_stmt",
-       "SEQUOIASQLMAINSTREAM-1634 "
+       "SEQUOIASQLMAINSTREAM-1748 "
        "Whether to re-execute DML statement using binary protocol.",
        HIDDEN SESSION_VAR(server_ha_retry_prepared_stmt),
        CMD_LINE(OPT_ARG), DEFAULT(TRUE));
