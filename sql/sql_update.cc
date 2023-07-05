@@ -943,6 +943,7 @@ update_begin:
   if (ignore)
     table->file->extra(HA_EXTRA_IGNORE_DUP_KEY);
   
+  thd->abort_on_warning= !ignore && thd->is_strict_mode();
   if (select && select->quick && select->quick->reset())
     goto err;
   table->file->try_semi_consistent_read(1);
@@ -958,7 +959,6 @@ update_begin:
   thd->cuted_fields=0L;
 
   transactional_table= table->file->has_transactions();
-  thd->abort_on_warning= !ignore && thd->is_strict_mode();
 
   if (do_direct_update)
   {
