@@ -4734,6 +4734,7 @@ protected:
   }
   friend class ha_partition;
   friend class ha_sequence;
+  friend class ha_sdb_part_wrapper;
 public:
   /**
     This method is similar to update_row, however the handler doesn't need
