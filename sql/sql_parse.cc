@@ -5234,6 +5234,7 @@ mysql_execute_command(THD *thd)
 
     if (likely(!thd->is_fatal_error))
     {
+      thd->abort_on_warning= (!thd->lex->ignore && thd->is_strict_mode());
       result= new (thd->mem_root) multi_delete(thd, aux_tables,
                                                lex->table_count_update);
       if (likely(result))
@@ -5252,6 +5253,7 @@ mysql_execute_command(THD *thd)
                           OPTION_SETUP_TABLES_DONE) & ~OPTION_BUFFER_RESULT,
                           result, unit, select_lex);
         res|= (int)(thd->is_error());
+        thd->abort_on_warning= false;
 
         MYSQL_MULTI_DELETE_DONE(res, result->num_deleted());
         if (res)

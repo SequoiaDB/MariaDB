@@ -692,11 +692,13 @@ bool mysql_delete(THD *thd, TABLE_LIST *table_list, COND *conds,
   if (select && select->quick && select->quick->reset())
     goto got_error;
 
+  thd->abort_on_warning= (!thd->lex->ignore && thd->is_strict_mode());
   if (query_plan.index == MAX_KEY || (select && select->quick))
     error= init_read_record(&info, thd, table, select, file_sort, 1, 1, FALSE);
   else
     error= init_read_record_idx(&info, thd, table, 1, query_plan.index,
                                 reverse);
+  thd->abort_on_warning= false;
   if (unlikely(error))
     goto got_error;
   
