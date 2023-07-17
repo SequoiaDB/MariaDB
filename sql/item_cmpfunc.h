@@ -3054,6 +3054,7 @@ public:
   Item *build_clone(THD *thd);
   bool excl_dep_on_table(table_map tab_map);
   bool excl_dep_on_grouping_fields(st_select_lex *sel);
+  void constant_substitution_for_pushed_having(THD *thd);
 
 private:
   void merge_sub_condition(List_iterator<Item>& li);

@@ -9364,7 +9364,9 @@ void Item_args::constant_substitution_for_pushed_having(THD *thd)
     {
       // always false
       args[i] = new (thd->mem_root) Item_int(thd, (longlong)0);
+      continue;
     }
+    args[i]->constant_substitution_for_pushed_having(thd);
   }
 }
 
