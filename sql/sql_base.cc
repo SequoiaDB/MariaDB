@@ -363,6 +363,8 @@ bool close_cached_tables(THD *thd, TABLE_LIST *tables,
   {
     /* Free tables that are not used */
     purge_tables(false);
+    if (ha_flush_table(thd, NULL, NULL))
+      DBUG_RETURN(true);
     if (!wait_for_refresh)
       DBUG_RETURN(false);
   }
@@ -451,8 +453,12 @@ bool close_cached_tables(THD *thd, TABLE_LIST *tables,
       DBUG_RETURN(true);
 
     for (TABLE_LIST *table= tables; table; table= table->next_local)
+    {
       tdc_remove_table(thd, TDC_RT_REMOVE_ALL, table->db.str,
                        table->table_name.str, false);
+      if (ha_flush_table(thd, table->db.str, table->table_name.str))
+        DBUG_RETURN(true);
+    }
   }
   DBUG_RETURN(false);
 }

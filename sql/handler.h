@@ -1423,6 +1423,7 @@ struct handlerton
    int (*panic)(handlerton *hton, enum ha_panic_function flag);
    int (*start_consistent_snapshot)(handlerton *hton, THD *thd);
    bool (*flush_logs)(handlerton *hton);
+   bool (*flush_table)(THD *thd, const char *db_name, const char *table_name);
    bool (*show_status)(handlerton *hton, THD *thd, stat_print_fn *print, enum ha_stat_type stat);
    uint (*partition_flags)();
    alter_table_operations (*alter_table_flags)(alter_table_operations flags);
@@ -4958,6 +4959,7 @@ int ha_panic(enum ha_panic_function flag);
 void ha_close_connection(THD* thd);
 void ha_kill_query(THD* thd, enum thd_kill_levels level);
 bool ha_flush_logs(handlerton *db_type);
+bool ha_flush_table(THD *thd, const char *db_name, const char *table_name);
 void ha_drop_database(char* path);
 void ha_checkpoint_state(bool disable);
 void ha_commit_checkpoint_request(void *cookie, void (*pre_hook)(void *));

@@ -2577,6 +2577,22 @@ bool ha_flush_logs(handlerton *db_type)
   return FALSE;
 }
 
+bool ha_flush_table(THD* thd, const char *db, const char *name)
+{
+  if (!thd)
+    return false;
+  // Generally we should loop all storage plugins and do flush for them.
+  // But we don't want to maintain others engine espect SequoiaDB.
+  const char *sdb_name_ptr = "SequoiaDB";
+  const LEX_CSTRING sdb_name= {const_cast<char*>(sdb_name_ptr), strlen(sdb_name_ptr)};
+  plugin_ref sdb_engine= ha_resolve_by_name(thd, &sdb_name, FALSE);
+  handlerton *sdb_hton= plugin_data(sdb_engine, handlerton *);
+  if (sdb_hton && sdb_hton->flush_table)
+  {
+    return sdb_hton->flush_table(thd, db, name);
+  }
+  return false;
+}
 
 /**
   @brief make canonical filename
