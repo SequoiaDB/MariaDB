@@ -3883,7 +3883,7 @@ bool change_password(THD *thd, LEX_USER *user)
 {
   Grant_tables tables;
   /* Buffer should be extended when password length is extended. */
-  char buff[512];
+  char *buff = (char *) thd->alloc(512);
   ulong query_length= 0;
   enum_binlog_format save_binlog_format;
   bool result= false, acl_cache_is_locked= false;
@@ -3965,11 +3965,12 @@ bool change_password(THD *thd, LEX_USER *user)
   hostname_cache_refresh();                    // Clear locked hostname cache
   mysql_mutex_unlock(&acl_cache->lock);
   result= acl_cache_is_locked= 0;
+  query_length= sprintf(buff, "SET PASSWORD FOR '%-.120s'@'%-.120s'='%-.120s'",
+         user->user.str, safe_str(user->host.str), auth.auth_string.str);
+  DBUG_ASSERT(query_length);
+  thd->set_query(buff, query_length, system_charset_info);
   if (mysql_bin_log.is_open())
   {
-    query_length= sprintf(buff, "SET PASSWORD FOR '%-.120s'@'%-.120s'='%-.120s'",
-           user->user.str, safe_str(user->host.str), auth.auth_string.str);
-    DBUG_ASSERT(query_length);
     thd->clear_error();
     result= thd->binlog_query(THD::STMT_QUERY_TYPE, buff, query_length,
                               FALSE, FALSE, FALSE, 0) > 0;

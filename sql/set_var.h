@@ -364,6 +364,7 @@ public:
   {}
   int check(THD *thd);
   int update(THD *thd);
+  LEX_USER *get_user() { return user; }
 };
 
 /* For SET ROLE */
