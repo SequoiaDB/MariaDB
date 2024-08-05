@@ -2836,6 +2836,7 @@ dispatch_end:
   MYSQL_END_STATEMENT(thd->m_statement_psi, thd->get_stmt_da());
   thd->set_examined_row_count(0);                   // For processlist
   thd->set_command(COM_SLEEP);
+  thd->lex->sql_command= SQLCOM_END;
 
   thd->m_statement_psi= NULL;
   thd->m_digest= NULL;
