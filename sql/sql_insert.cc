@@ -1807,7 +1807,7 @@ int write_record(THD *thd, TABLE *table,COPY_INFO *info)
       if (table->file->ha_table_flags() & HA_DUPLICATE_POS)
       {
         DBUG_ASSERT(table->file->inited == handler::RND);
-	if (table->file->ha_rnd_pos(table->record[1],table->file->dup_ref))
+	if ((error=table->file->ha_rnd_pos(table->record[1],table->file->dup_ref)))
 	  goto err;
       }
       else
